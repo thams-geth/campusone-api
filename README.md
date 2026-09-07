@@ -24,6 +24,17 @@ npm run dev
 
 The API listens on `http://localhost:4000` by default; `GET /health` is a liveness check.
 
+### Auth endpoints
+
+| Route | Auth | Notes |
+|---|---|---|
+| `POST /api/auth/login` | none | `{ email, password }` → `{ user, token }` + sets an httpOnly refresh cookie |
+| `POST /api/auth/refresh` | refresh cookie | rotates the refresh token, returns a new `{ token }` |
+| `POST /api/auth/logout` | refresh cookie | revokes the refresh token, clears the cookie |
+| `GET /api/auth/me` | `Authorization: Bearer <token>` | returns the current user |
+
+`login`/`refresh` sit behind a stricter rate limit than the rest of the API (see `auth.routes.ts`).
+
 If Postgres was already running from before `docker/init-app-role.sql` existed, that init script won't retroactively run on the existing volume — apply it by hand once:
 
 ```bash
@@ -73,8 +84,9 @@ Tenant context flows: JWT → auth middleware sets `requestContext` (`AsyncLocal
 
 ## Security notes
 
-- Passwords are hashed with bcrypt; plaintext passwords never touch the database or logs (see the logger's redaction config).
-- Access tokens are short-to-medium-lived JWTs; refresh tokens are opaque, stored hashed, and delivered as an httpOnly, secure, SameSite cookie — never exposed to JS.
+- Passwords are hashed with bcrypt (12 rounds); plaintext passwords never touch the database or logs (see the logger's redaction config).
+- Access tokens are JWTs; refresh tokens are opaque random values, stored as a SHA-256 hash (not the raw token), and delivered as an httpOnly cookie — never exposed to JS. Refresh tokens rotate on every use (the presented one is revoked and a new one issued); reusing an already-rotated token is rejected.
+- Accounts lock for 30s after 5 consecutive failed logins (tracked server-side on the `User` row, not just client-side UX).
 - All request bodies are validated with Zod before touching business logic; validation failures never reach the database layer.
 - CORS is locked to the configured frontend origin(s); `credentials: true` is required for the refresh-token cookie to work cross-origin in dev.
 - Rate limiting is applied globally, with a stricter limit on auth endpoints (login/refresh) to slow down credential-stuffing attempts. This is defense-in-depth, not a substitute for a proper WAF/edge rate limiter in production.

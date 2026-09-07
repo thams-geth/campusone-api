@@ -1,5 +1,5 @@
 import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient, type User } from '@prisma/client'
+import { PrismaClient, type RefreshToken, type User } from '@prisma/client'
 import { env } from '../config/env'
 import { getRequestContext } from './tenantContext'
 
@@ -68,4 +68,21 @@ export async function findUserByEmailForLogin(email: string): Promise<User | nul
     basePrisma.user.findUnique({ where: { email } }),
   ])
   return user
+}
+
+/**
+ * The other deliberate bootstrap exception: refresh and logout receive
+ * only an opaque refresh token (via cookie), not a tenant id, so the
+ * token lookup by hash must run before the tenant is known too. See the
+ * RLS policy comment on RefreshToken for the same fail-closed guarantee.
+ */
+export async function findRefreshTokenByHash(
+  tokenHash: string,
+): Promise<(RefreshToken & { user: User }) | null> {
+  const [, , token] = await basePrisma.$transaction([
+    basePrisma.$executeRaw`SELECT set_config('app.tenant_bootstrap', 'true', TRUE)`,
+    basePrisma.$executeRaw`SELECT set_config('app.current_tenant', '', TRUE)`,
+    basePrisma.refreshToken.findUnique({ where: { tokenHash }, include: { user: true } }),
+  ])
+  return token
 }

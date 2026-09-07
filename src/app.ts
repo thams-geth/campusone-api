@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit'
 import { env } from './config/env'
 import { logger } from './config/logger'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler'
+import { authRouter } from './modules/auth/auth.routes'
 
 export function createApp() {
   const app = express()
@@ -41,8 +42,10 @@ export function createApp() {
     res.json({ status: 'ok' })
   })
 
-  // Feature module routers mount here (e.g. app.use('/api/auth', authRouter))
-  // as they're built — must come before the 404/error handlers below.
+  app.use('/api/auth', authRouter)
+
+  // Further feature module routers mount here as they're built — must
+  // come before the 404/error handlers below.
 
   app.use(notFoundHandler)
   app.use(errorHandler)
