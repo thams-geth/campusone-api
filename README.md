@@ -15,14 +15,20 @@ Backend API for **CampusOne**, a multi-tenant SaaS college management platform. 
 
 ```bash
 cp .env.example .env        # then fill in real secrets
-docker compose up -d        # Postgres + Redis
+docker compose up -d        # Postgres + Redis (also creates the app_role — see Multi-tenancy below)
 npm install
-npm run prisma:migrate      # once a schema exists
+npm run prisma:migrate      # applies the schema + RLS policies
 npm run prisma:seed         # once a seed script exists
 npm run dev
 ```
 
 The API listens on `http://localhost:4000` by default; `GET /health` is a liveness check.
+
+If Postgres was already running from before `docker/init-app-role.sql` existed, that init script won't retroactively run on the existing volume — apply it by hand once:
+
+```bash
+docker compose exec -T postgres psql -U campusone -d campusone < docker/init-app-role.sql
+```
 
 ## Scripts
 
@@ -45,17 +51,25 @@ src/
 ├── config/       # env validation, logger
 ├── middleware/   # error handling, auth, tenant context
 ├── modules/      # one folder per feature (auth, departments, students, ...)
+├── prisma/       # Prisma client + extension, tenant context (AsyncLocalStorage)
 ├── utils/        # ApiError and other shared helpers
 ├── app.ts        # Express app wiring (middleware, routes)
 └── server.ts     # process entry point
 prisma/
 ├── schema.prisma
-└── seed.ts
+├── migrations/
+└── seed.ts       # once it exists
+docker/
+└── init-app-role.sql  # creates the non-superuser role the API runs as
 ```
 
 ## Multi-tenancy
 
-Pooled database, one schema, every table carries a `tenantId` column, enforced with Postgres Row-Level Security as the last line of defense — not just application-level `WHERE tenantId = ...` clauses. See `CLAUDE.md` in the frontend repo for the full architecture rationale.
+Pooled database, one schema, every table carries a `tenantId` column, enforced with Postgres Row-Level Security as the last line of defense — not just application-level `WHERE tenantId = ...` clauses. See `CLAUDE.md` for the full architecture rationale.
+
+**Two Postgres roles, on purpose:** `campusone` (from `POSTGRES_USER`) is a Postgres *superuser* — that's how the official postgres image works — and Postgres superusers bypass Row-Level Security unconditionally, even with `FORCE ROW LEVEL SECURITY`. Migrations run as `campusone` (`DATABASE_URL`), but the running API connects as `campusone_app` (`APP_DATABASE_URL`), a plain non-superuser role created by `docker/init-app-role.sql`, which is what actually makes the RLS policies enforce anything. This isn't hypothetical — the first version of this setup used one role for everything, and `src/prisma/client.test.ts`'s RLS tests caught it immediately (every "isolation" test passed even with the policies doing nothing, because they ran as the superuser). If you ever see all-tenants-visible behavior, check which role the connection is using before anything else.
+
+Tenant context flows: JWT → auth middleware sets `requestContext` (`AsyncLocalStorage`, `src/prisma/tenantContext.ts`) → the Prisma client extension (`src/prisma/client.ts`) reads it and runs `SET LOCAL app.current_tenant` in the same transaction as every query. One narrow, documented exception: login looks up a user by email before the tenant is known (email is globally unique so one login form can resolve it) — see `findUserByEmailForLogin` and the RLS policy comment on the `User` table.
 
 ## Security notes
 

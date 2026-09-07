@@ -10,6 +10,7 @@ services:
       - '5432:5432'
     volumes:
       - campusone_postgres_data:/var/lib/postgresql/data
+      - ./docker/init-app-role.sql:/docker-entrypoint-initdb.d/init-app-role.sql:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U campusone']
       interval: 5s
