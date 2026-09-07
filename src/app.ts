@@ -9,6 +9,7 @@ import { logger } from './config/logger'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler'
 import { authRouter } from './modules/auth/auth.routes'
 import { departmentsRouter } from './modules/departments/department.routes'
+import { studentsRouter } from './modules/students/student.routes'
 
 export function createApp() {
   const app = express()
@@ -45,6 +46,7 @@ export function createApp() {
 
   app.use('/api/auth', authRouter)
   app.use('/api/departments', departmentsRouter)
+  app.use('/api/students', studentsRouter)
 
   // Further feature module routers mount here as they're built — must
   // come before the 404/error handlers below.

@@ -47,6 +47,18 @@ All require `Authorization: Bearer <token>` and one of `SUPER_ADMIN`/`COLLEGE_AD
 | `PUT /api/departments/:id` | same duplicate-code check, excluding itself |
 | `DELETE /api/departments/:id` | 409 `DEPARTMENT_IN_USE` if it still has students |
 
+### Students endpoints
+
+All require `Authorization: Bearer <token>` and any staff role (`SUPER_ADMIN`/`COLLEGE_ADMIN`/`DEPARTMENT_ADMIN`/`FACULTY`/`STAFF`) — broader than Departments, matching the frontend's nav gate.
+
+| Route | Notes |
+|---|---|
+| `GET /api/students` | paginated, `search`, `departmentId`, `status` query params |
+| `GET /api/students/:id` | 404s for another tenant's student (RLS) |
+| `POST /api/students` | 422 `INVALID_DEPARTMENT` / `DEPARTMENT_INACTIVE`; 409 `DUPLICATE_EMAIL` / `DUPLICATE_ROLL_NUMBER` |
+| `PUT /api/students/:id` | same checks, excluding itself |
+| `DELETE /api/students/:id` | — |
+
 If Postgres was already running from before `docker/init-app-role.sql` existed, that init script won't retroactively run on the existing volume — apply it by hand once:
 
 ```bash

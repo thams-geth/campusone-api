@@ -1,11 +1,16 @@
 import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient, type Role } from '@prisma/client'
+import { DepartmentStatus, PrismaClient, type Role } from '@prisma/client'
 import request from 'supertest'
 import type { Express } from 'express'
 import { env } from '../config/env'
 import { prisma } from '../prisma/client'
 import { requestContext } from '../prisma/tenantContext'
 import { hashPassword } from '../modules/auth/auth.service'
+
+/** Codes/slugs are length-capped in the schema — keep test identifiers short. */
+export function shortId(prefix = ''): string {
+  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+}
 
 export const rawTestPrisma = new PrismaClient({ adapter: new PrismaPg(env.APP_DATABASE_URL) })
 
@@ -31,6 +36,22 @@ export async function createTestUser(tenantId: string, role: Role, emailPrefix: 
         passwordHash,
         role,
         isActive: true,
+      },
+    }),
+  )
+}
+
+export async function createTestDepartment(
+  tenantId: string,
+  overrides: Partial<{ name: string; code: string; status: DepartmentStatus }> = {},
+) {
+  return requestContext.run({ tenantId, userId: 'bootstrap', role: 'SUPER_ADMIN' }, async () =>
+    await prisma.department.create({
+      data: {
+        tenantId,
+        name: overrides.name ?? 'Test Department',
+        code: overrides.code ?? shortId('D'),
+        status: overrides.status ?? DepartmentStatus.ACTIVE,
       },
     }),
   )
