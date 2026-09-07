@@ -35,6 +35,18 @@ The API listens on `http://localhost:4000` by default; `GET /health` is a livene
 
 `login`/`refresh` sit behind a stricter rate limit than the rest of the API (see `auth.routes.ts`).
 
+### Departments endpoints
+
+All require `Authorization: Bearer <token>` and one of `SUPER_ADMIN`/`COLLEGE_ADMIN`/`DEPARTMENT_ADMIN` — matching the frontend's route-level gate on the whole section, not just the mutating routes.
+
+| Route | Notes |
+|---|---|
+| `GET /api/departments` | paginated (`page`, `pageSize`), `search`, `status` query params |
+| `GET /api/departments/:id` | 404s for another tenant's department (RLS, not an app-level check) |
+| `POST /api/departments` | 409 `DUPLICATE_CODE` on a repeated code |
+| `PUT /api/departments/:id` | same duplicate-code check, excluding itself |
+| `DELETE /api/departments/:id` | 409 `DEPARTMENT_IN_USE` if it still has students |
+
 If Postgres was already running from before `docker/init-app-role.sql` existed, that init script won't retroactively run on the existing volume — apply it by hand once:
 
 ```bash
