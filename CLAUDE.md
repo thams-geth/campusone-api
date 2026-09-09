@@ -38,6 +38,8 @@ All routes are mounted under `/api/v1` (see `src/app.ts`). `/health`, `/health/l
 - Route guards call `requirePermission('STUDENT_READ')`, never a role name — `src/middleware/requireAuth.ts`. This is what lets grants change as data later without touching route code.
 - The JWT carries a role *name* (string), not permissions — `requirePermission` resolves name → granted permissions per-request through a short-TTL cache (`src/modules/rbac/permissionCache.ts`), so a revoked grant takes effect within seconds instead of only after the token expires.
 - Every permission check is still "does user X's role have permission Y inside tenant Z" — never just "does this permission exist somewhere."
+- **Gotcha:** grants are only synced onto a tenant's roles at seed time (`seedTenantRoles`, called at tenant creation). Extending `permissions.ts`'s `DEFAULT_ROLE_PERMISSIONS` later doesn't retroactively grant existing tenants anything — re-run `seedTenantRoles(tenantId)` (or `npm run prisma:seed` for the demo tenant) after adding permission keys, or an existing SUPER_ADMIN can 403 on a brand-new route. Bit us once building Milestone 2's Academic Management permissions.
+- **Self-service pattern:** a route a student/faculty member performs on their own record (mark attendance, submit an assignment, request leave, view own marks) accepts an optional explicit id (lets staff act on someone's behalf) and otherwise resolves the caller's own profile via `Student.userId`/`Faculty.userId` — see `resolveOwnStudentId`/`resolveOwnFacultyId` in `src/modules/shared/`. `Student.userId` is nullable (most students have no login yet, added in Milestone 2 specifically to make this resolution possible) — there's no self-registration/account-linking flow yet, so it's only populated by test fixtures and future admin tooling.
 
 ## Module system
 
@@ -61,7 +63,9 @@ All routes are mounted under `/api/v1` (see `src/app.ts`). `/health`, `/health/l
 
 Milestone 1 ("Core ERP Foundation" — roadmap's Release 1) is built: RBAC engine, module entitlement enforcement, `/api/v1` versioning, request IDs, the Institution/AcademicYear/Program/Batch/Section/Subject/Faculty/Room hierarchy, Timetable with conflict detection, structured audit log, Departments/Students (pre-existing, now on the RBAC engine), Dashboard.
 
-Next, per the roadmap's Priority Order (§43) and Release Plan (§42) — Release 2, "Academic Management": Attendance → Assignments → Exams/Marks/Results/Reports → Leave → Announcements → Documents → Import/Export. Then Release 3 (Admissions, Fees, Hostel/Transport/Library, Certificates, Placements) and Release 4 (SaaS billing, SSO/MFA, integrations, workflow engine) — see the roadmap doc for the full entity models before building any of these.
+Milestone 2 ("Academic Management" — roadmap's Release 2) is also built: Attendance (session lock + correction/approval workflow), Leave (integrated with Attendance), Assignments, Examinations (Exam/Schedule/Marks with the draft→submit→verify→publish workflow, SGPA/CGPA computed on read), Announcements, Documents, Reports (read-only aggregations, no new models), and Import/Export (student CSV only). This is the first real use of the `EXAMINATION` and `COMMUNICATION` modules and of `EXAM_ADMIN`'s permission grants — all three were scaffolded in Milestone 1 with nothing to gate/grant yet.
+
+Next, per the roadmap's Priority Order (§43) and Release Plan (§42) — Release 3: Admissions → Fees/Payments/Scholarships → Hostel/Transport/Library → Certificates/Student Activities/Placements. Then Release 4 (SaaS billing, SSO/MFA, integrations, workflow engine) — see the roadmap doc for the full entity models before building any of these.
 
 ## Matching the frontend's mock contract
 

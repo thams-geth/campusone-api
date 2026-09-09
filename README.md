@@ -49,7 +49,8 @@ All routes except `/health*`, `POST /api/v1/auth/login`, and `POST /api/v1/auth/
 ### RBAC & modules
 
 - **Permissions, not hardcoded roles.** `Role`/`Permission`/`RolePermission`/`UserRole` are DB tables (`src/modules/rbac`) — every tenant is seeded with 10 system roles (`PLATFORM_ADMIN, SUPER_ADMIN, COLLEGE_ADMIN, DEPARTMENT_ADMIN, HOD, EXAM_ADMIN, FACULTY, STAFF, STUDENT, PARENT`) and default permission grants (`src/modules/rbac/permissions.ts`). Each route below is written as "requires permission `X`" — check that file for exactly which roles hold it today; that mapping can change without a route-code change.
-- **Modules.** Each route is also gated to a `ModuleId` (`CORE` or `ACADEMICS` for everything in this milestone). `CORE` is always on; `ACADEMICS` must be enabled per-tenant via a `TenantModule` row (no admin endpoint for this yet — see `enableModule` in `src/test/helpers.ts` for the shape, or set it directly).
+  - **Gotcha:** seeding only happens at tenant creation (`seedTenantRoles`). If you extend the permission catalogue later, an *existing* tenant's roles don't automatically pick up the new grants — re-run `npm run prisma:seed` (idempotent — it re-syncs the demo tenant's grants via `skipDuplicates`) or call `seedTenantRoles(tenantId)` for any other existing tenant.
+- **Modules.** Each route is also gated to a `ModuleId` — `CORE`, `ACADEMICS` (Attendance, Assignments, Leave, Timetable), `EXAMINATION` (Exams/Marks/Results), or `COMMUNICATION` (Announcements). `CORE` is always on; the others must be enabled per-tenant via a `TenantModule` row (no admin endpoint for this yet — see `enableModule` in `src/test/helpers.ts` for the shape, or set it directly).
 
 ### Auth endpoints (`/api/v1/auth`)
 
@@ -265,6 +266,124 @@ Permission: `AUDIT_LOG_READ` (admin-only by default grant).
 
 Written automatically by every module's mutations (`src/modules/shared/activityLog.ts`) — `message` alone backs the dashboard's activity feed; `entity`/`entityId`/`action`/`requestId` back this fuller view.
 
+### Attendance (`/api/v1/attendance`) — module `ACADEMICS`
+
+Permissions: `ATTENDANCE_READ`, `ATTENDANCE_MARK` (create sessions, mark records, submit), `ATTENDANCE_EDIT` (edit before lock), `ATTENDANCE_APPROVE` (lock, approve/reject corrections). The roadmap's flagship "not just CRUD" example (§45): `DRAFT → SUBMITTED → LOCKED`, and once `LOCKED` a record can only change through a correction request + approval — never a direct edit.
+
+| Route | Request | Response |
+|---|---|---|
+| `POST /sessions` | body: `{ sectionId, subjectId, date, facultyId? }` | `201 AttendanceSession` — pre-populates one `PRESENT` record per active student in the section; `facultyId` resolves to the caller's own Faculty profile if omitted |
+| `GET /sessions` | query: `page?, pageSize?, sectionId?, subjectId?, facultyId?` | `200` paginated `AttendanceSession[]` |
+| `GET /sessions/:id` | — | `200 AttendanceSession` with `records[]` |
+| `PUT /sessions/:id/records` | body: `{ records: [{ studentId, status }] }` | `200 AttendanceSession` — `409 SESSION_LOCKED` once locked |
+| `POST /sessions/:id/submit` | — | `200` — `DRAFT → SUBMITTED` only |
+| `POST /sessions/:id/lock` | — | `200` — `SUBMITTED → LOCKED` only |
+| `GET /student/:studentId`, `/section/:sectionId`, `/subject/:subjectId` | query: `page?, pageSize?, dateFrom?, dateTo?` | `200` paginated `AttendanceRecord[]` |
+| `POST /records/:id/correction` | body: `{ requestedStatus, reason }` | `201 AttendanceCorrection` — only for a record in a `LOCKED` session |
+| `GET /corrections` | query: `page?, pageSize?, status?` | `200` paginated `AttendanceCorrection[]` |
+| `POST /corrections/:id/approve` \| `/reject` | — | `200` — approving updates the record and writes a before/after audit entry |
+
+`status: PRESENT \| ABSENT \| LATE \| EXCUSED \| ON_LEAVE`. `409 DUPLICATE_SESSION` on a repeated section/subject/date.
+
+### Leave (`/api/v1/leave`) — module `ACADEMICS`
+
+Permissions: `LEAVE_READ`, `LEAVE_REQUEST` (self-service), `LEAVE_APPROVE` (also manages leave types). Integrated with Attendance per roadmap §16: approving a request sets any existing `AttendanceRecord` for that student in the date range to `ON_LEAVE`.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /types` \| `POST /types` \| `PUT /types/:id` \| `DELETE /types/:id` | `{ name, defaultDaysPerYear }` | Standard CRUD — `409 LEAVE_TYPE_IN_USE` on delete if requests exist |
+| `POST /requests` | `{ leaveTypeId, startDate, endDate, reason, studentId? }` | `201 LeaveRequest`, `PENDING` — `studentId` resolves to the caller's own Student profile if omitted |
+| `GET /requests` | query: `page?, pageSize?, studentId?, status?` | `200` paginated `LeaveRequest[]` |
+| `POST /requests/:id/approve` \| `/reject` | — | `200` — `409 ALREADY_REVIEWED` if not `PENDING` |
+| `GET /balance/:studentId` | query: `year?` (defaults to current year) | `200 [{ leaveTypeId, leaveTypeName, defaultDaysPerYear, usedDays, remainingDays }]` — computed on read, not a stored ledger |
+
+### Assignments (`/api/v1/assignments`) — module `ACADEMICS`
+
+Permissions: `ASSIGNMENT_READ`, `ASSIGNMENT_MANAGE` (create/update/publish/close, faculty/admin), `ASSIGNMENT_SUBMIT` (self-service), `ASSIGNMENT_EVALUATE`. `DRAFT → PUBLISHED → CLOSED`; submissions only accepted while `PUBLISHED`.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` \| `GET /:id` | query: `page?, pageSize?, sectionId?, subjectId?, status?` | Standard list/get |
+| `POST /` | `{ subjectId, sectionId, title, description?, startDate, dueDate, maxMarks, facultyId? }` | `201 Assignment`, `DRAFT` |
+| `PUT /:id` | same body | `200` — `409 ASSIGNMENT_CLOSED` once closed |
+| `POST /:id/publish` \| `/close` | — | `200` — state-machine guarded (`409 INVALID_ASSIGNMENT_STATUS`) |
+| `DELETE /:id` | — | `204` — `409 ASSIGNMENT_IN_USE` if it has submissions |
+| `POST /:id/submissions` | `{ attachmentUrl?, studentId? }` | `201 AssignmentSubmission` — `status: SUBMITTED` or `LATE` (past `dueDate`); `409 ALREADY_SUBMITTED` on a resubmit; `409 ASSIGNMENT_NOT_PUBLISHED` otherwise |
+| `GET /:id/submissions` | query: `page?, pageSize?, status?` | `200` paginated `AssignmentSubmission[]` |
+| `PUT /submissions/:submissionId/evaluate` | `{ marksObtained, feedback? }` | `200` — `400` if `marksObtained` exceeds the assignment's `maxMarks` |
+
+`attachmentUrl` is a client-supplied reference (no file upload/object storage built here).
+
+### Examinations (`/api/v1/examinations`) — module `EXAMINATION`
+
+Permissions: `EXAM_READ`, `EXAM_MANAGE`, `MARKS_READ`, `MARKS_ENTER`, `MARKS_EDIT`, `MARKS_VERIFY`, `MARKS_PUBLISH`, `MARKS_REVISE` (revising a *published* mark — separate from `MARKS_EDIT`, always writes a before/after audit entry). Marks workflow: `DRAFT → SUBMITTED → VERIFIED → PUBLISHED`, transitioned in bulk per exam schedule.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /exams` \| `POST /exams` \| `PUT /exams/:id` \| `DELETE /exams/:id` | `{ name, examType, academicYearId, semesterNumber, startDate, endDate }` | Standard CRUD — `409 EXAM_IN_USE` on delete if schedules exist |
+| `GET /exams/:id/schedules` \| `POST /exams/:id/schedules` | `{ subjectId, examDate, startTime, endTime, roomId }` | `409 DUPLICATE_SCHEDULE` — one schedule per subject per exam |
+| `PUT /schedules/:id` \| `DELETE /schedules/:id` | — | `409 SCHEDULE_IN_USE` on delete if marks exist |
+| `POST /schedules/:id/marks` | `{ marks: [{ studentId, marksObtained?, maxMarks, specialStatus? }] }` | `200 Marks[]`, `DRAFT` — `409 MARKS_NOT_EDITABLE` if any entry has moved past `DRAFT` |
+| `GET /schedules/:id/marks` | — | `200 Marks[]` (full roster) — **staff-tier only** (`MARKS_ENTER`/`_VERIFY`/`_PUBLISH`); students use `/results/*` instead |
+| `POST /schedules/:id/marks/submit` \| `/verify` \| `/publish` | — | `200 Marks[]` — bulk state transition, `409 NO_MARKS_TO_TRANSITION` if none are in the expected prior state |
+| `PUT /marks/:id` | `{ marksObtained?, specialStatus? }` | `200` — `409 MARKS_NOT_EDITABLE` once `VERIFIED`/`PUBLISHED` |
+| `PUT /marks/:id/revise` | `{ marksObtained, reason }` | `200` — only for `PUBLISHED` marks; always audited |
+| `GET /results/semester/:semesterNumber` | query: `studentId?` (defaults to caller's own) | `200 { studentId, semesterNumber, subjects: [{ subjectId, name, code, credits, percentage, grade, gradePoints }], sgpa }` |
+| `GET /results/cgpa` | query: `studentId?` | `200 { studentId, subjectsCounted, totalCredits, cgpa }` |
+
+Results are computed on read from `PUBLISHED` marks only (grade scale: `O`≥90, `A+`≥80, `A`≥70, `B+`≥60, `B`≥50, `C`≥40, else `F`; SGPA/CGPA are credit-weighted grade-point averages) — never stored, so they can't drift from the underlying marks.
+
+### Announcements (`/api/v1/announcements`) — module `COMMUNICATION`
+
+Permissions: `ANNOUNCEMENT_READ`, `ANNOUNCEMENT_MANAGE`. In-app only — no SMS/WhatsApp/email/push delivery yet.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` | query: `page?, pageSize?, audience?` | `200` paginated `Announcement[]` — unfiltered admin view |
+| `GET /feed` | — | `200 Announcement[]` — the caller's personal feed: college-wide plus their own department/program/batch/section, currently published |
+| `GET /:id` \| `POST /` \| `PUT /:id` \| `DELETE /:id` | `{ title, content, audience, priority?, publishAt?, expiryAt?, departmentId?/programId?/batchId?/sectionId? }` | Standard CRUD |
+
+`audience: COLLEGE \| DEPARTMENT \| PROGRAM \| BATCH \| SECTION` — a `422` if the matching scope id (e.g. `departmentId` for `DEPARTMENT`) is missing.
+
+### Documents (`/api/v1/documents`) — module `CORE`
+
+Permissions: `DOCUMENT_READ`, `DOCUMENT_MANAGE`, `DOCUMENT_VERIFY`. Generic metadata only — `fileUrl` is a reference, no upload endpoint.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` | query: `page?, pageSize?, ownerType?, ownerId?, type?, status?` | `200` paginated `Document[]` — **staff-tier only** (`DOCUMENT_MANAGE`/`_VERIFY`) |
+| `GET /mine` | — | `200 Document[]` — the caller's own (resolved via their Student/Faculty profile) |
+| `POST /` | `{ ownerType, ownerId, type, fileUrl, expiryDate? }` | `201 Document`, `PENDING` |
+| `PUT /:id` | same body | `200` — bumps `version`, resets to `PENDING` (a new file needs re-verification) |
+| `POST /:id/verify` \| `/reject` | — | `200` — `409 ALREADY_REVIEWED` if not `PENDING` |
+
+`ownerType: STUDENT \| FACULTY`; `type: BONAFIDE \| TRANSFER_CERTIFICATE \| CONDUCT_CERTIFICATE \| MARK_SHEET \| ID_PROOF \| OTHER`.
+
+### Reports (`/api/v1/reports`) — module `CORE`
+
+Permission: `REPORTS_READ`. Read-only aggregations over existing data — no new models. Reports needing unbuilt modules (Fees, Admissions, Placements) aren't here yet.
+
+| Route | Query | Response |
+|---|---|---|
+| `GET /student-strength` | `departmentId?, programId?, batchId?, sectionId?` | `{ total, byDepartment: [{ departmentId, count }] }` |
+| `GET /attendance` | `sectionId?, subjectId?, dateFrom?, dateTo?` | `{ totalSessions, totalRecords, presentCount, attendancePercentage }` |
+| `GET /department-performance` | — | `[{ departmentId, name, studentCount, studentsAssessed, averageMarksPercentage }]` |
+| `GET /subject-performance` | `programId?` | `[{ subjectId, name, code, studentsAssessed, averageMarksPercentage }]` |
+| `GET /exam-results` | `examId` (required) | `{ examId, examName, totalAssessed, passCount, failCount, averagePercentage }` |
+| `GET /faculty-workload` | — | `[{ facultyId, name, subjectsAssigned, weeklyPeriods }]` |
+
+### Import / Export (`/api/v1/import-export`) — module `CORE`, Students only
+
+Permissions: `STUDENT_IMPORT`, `STUDENT_EXPORT`. CSV, not Excel (no binary-parsing dependency added — see `src/utils/csv.ts`). Follows upload → validate → preview → confirm (roadmap §27) minus the Excel specifics; other entities (Faculty, Marks, Attendance) follow the same pattern later, not built yet.
+
+| Route | Request | Response |
+|---|---|---|
+| `POST /students/preview` | `{ csv: string }` | `200 { totalRows, validCount, invalidCount, results: [{ row, valid, errors? }] }` — validates every row against the live `studentInputSchema`, creates nothing |
+| `POST /students/commit` | `{ csv: string }` | `200 { createdCount, failedCount, failed: [{ row, errors }] }` — re-validates; an invalid row is skipped and reported, never partially inserted |
+| `GET /students/export` | query: `departmentId?, status?` | `200` `text/csv` |
+
+CSV columns: `firstName,lastName,email,phone,rollNumber,departmentId,gender,dateOfBirth,admissionDate,status,sectionId,currentSemester,guardianName,guardianPhone,address` (`departmentId`/`sectionId` are raw ids, not codes).
+
 ---
 
 If Postgres was already running from before `docker/init-app-role.sql` existed, that init script won't retroactively run on the existing volume — apply it by hand once:
@@ -296,7 +415,9 @@ src/
 ├── middleware/   # error handling, auth, permission/module guards, request-id, tenant context
 ├── modules/      # one folder per feature — auth, rbac, departments, students, academic-years,
 │                 # programs, batches, sections, subjects, faculty, rooms, timetable,
-│                 # institution, audit, dashboard, shared (audit-log writer)
+│                 # institution, audit, dashboard, attendance, leave, assignments,
+│                 # examinations, announcements, documents, reports, import-export,
+│                 # shared (audit-log writer + own-student/own-faculty resolvers)
 ├── prisma/       # Prisma client + extension, tenant context (AsyncLocalStorage)
 ├── utils/        # ApiError and other shared helpers
 ├── app.ts        # Express app wiring (middleware, /api/v1 routes)
