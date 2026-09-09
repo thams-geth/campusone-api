@@ -1,10 +1,17 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Role } from '@prisma/client'
 
 export interface RequestContext {
   tenantId: string
   userId: string
-  role: Role
+  // A role *name* (e.g. "SUPER_ADMIN"), not the old Prisma enum — roles
+  // are now DB rows (see the Role model) so custom/tenant-specific
+  // roles can exist without a schema change. Permission checks resolve
+  // this name through requirePermission (src/middleware/requireAuth.ts).
+  role: string
+  // Set by requireAuth from req.requestId (see middleware/requestId.ts).
+  // Absent in the pre-auth bootstrap contexts (login/refresh/logout)
+  // since there's no request object at that layer to read it from.
+  requestId?: string
 }
 
 /**

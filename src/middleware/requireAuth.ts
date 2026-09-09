@@ -1,9 +1,10 @@
 import type { NextFunction, Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
-import type { Role } from '@prisma/client'
 import { env } from '../config/env'
 import { ApiError } from '../utils/ApiError'
 import { requestContext } from '../prisma/tenantContext'
+import { getPermissionsForRole } from '../modules/rbac/permissionCache'
+import type { PermissionKey } from '../modules/rbac/permissions'
 import type { AccessTokenPayload } from '../modules/auth/token.types'
 
 /**
@@ -29,17 +30,27 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   }
 
   req.auth = { userId: payload.sub, tenantId: payload.tenantId, role: payload.role }
-  requestContext.run({ tenantId: payload.tenantId, userId: payload.sub, role: payload.role }, next)
+  requestContext.run(
+    { tenantId: payload.tenantId, userId: payload.sub, role: payload.role, requestId: req.requestId },
+    next,
+  )
 }
 
-/** RBAC guard: explicit per-route allow-list, never an inferred hierarchy. */
-export function requireRole(...roles: Role[]) {
-  return (req: Request, _res: Response, next: NextFunction) => {
+/**
+ * RBAC guard: resolves the caller's role to its granted permission set
+ * (Role/Permission/RolePermission — see src/modules/rbac) and allows
+ * the request through if it holds ANY of the listed permissions. Routes
+ * declare what they need in terms of permissions, never role names —
+ * that's what makes roles/grants editable as data instead of code.
+ */
+export function requirePermission(...keys: PermissionKey[]) {
+  return async (req: Request, _res: Response, next: NextFunction) => {
     if (!req.auth) {
       next(ApiError.unauthorized())
       return
     }
-    if (!roles.includes(req.auth.role)) {
+    const granted = await getPermissionsForRole(req.auth.tenantId, req.auth.role)
+    if (!keys.some((key) => granted.has(key))) {
       next(ApiError.forbidden())
       return
     }
