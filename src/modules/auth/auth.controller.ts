@@ -5,9 +5,9 @@ import { loginSchema } from './auth.schema'
 import * as authService from './auth.service'
 
 const REFRESH_COOKIE_NAME = 'refreshToken'
-// Scoped to /api/auth: the cookie only needs to be sent to the
+// Scoped to /api/v1/auth: the cookie only needs to be sent to the
 // login/refresh/logout/me routes, not every API request.
-const REFRESH_COOKIE_PATH = '/api/auth'
+const REFRESH_COOKIE_PATH = '/api/v1/auth'
 
 function setRefreshCookie(res: Response, token: string, expiresAt: Date) {
   res.cookie(REFRESH_COOKIE_NAME, token, {

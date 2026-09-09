@@ -23,7 +23,7 @@ export interface AuthUserDto {
   tenantId: string
   name: string
   email: string
-  role: User['role']
+  role: string
   isActive: boolean
 }
 
@@ -33,15 +33,29 @@ export interface TokenPair {
   refreshTokenExpiresAt: Date
 }
 
-export function toAuthUserDto(user: User): AuthUserDto {
+export function toAuthUserDto(user: User, role: string): AuthUserDto {
   return {
     id: user.id,
     tenantId: user.tenantId,
     name: user.name,
     email: user.email,
-    role: user.role,
+    role,
     isActive: user.isActive,
   }
+}
+
+/**
+ * A user can hold more than one role (see the UserRole join model), but
+ * nothing assigns more than one today — this resolves the first as the
+ * "primary" role for JWTs/display. Must run inside a request context
+ * scoped to the user's own tenant (RLS on Role/UserRole requires it).
+ */
+export async function getPrimaryRoleName(userId: string): Promise<string> {
+  const userRole = await prisma.userRole.findFirst({ where: { userId }, include: { role: true } })
+  if (!userRole) {
+    throw ApiError.internal('User has no role assigned.')
+  }
+  return userRole.role.name
 }
 
 function hashRefreshToken(raw: string): string {
@@ -54,8 +68,8 @@ function signAccessToken(payload: AccessTokenPayload): string {
   })
 }
 
-async function issueTokenPair(user: User): Promise<TokenPair> {
-  const accessToken = signAccessToken({ sub: user.id, tenantId: user.tenantId, role: user.role })
+async function issueTokenPair(user: User, role: string): Promise<TokenPair> {
+  const accessToken = signAccessToken({ sub: user.id, tenantId: user.tenantId, role })
   const rawRefreshToken = crypto.randomBytes(REFRESH_TOKEN_BYTES).toString('hex')
   const refreshTokenExpiresAt = new Date(Date.now() + ms(env.JWT_REFRESH_EXPIRES_IN))
 
@@ -84,7 +98,11 @@ export async function login(email: string, password: string): Promise<{ user: Au
     throw invalidCredentials()
   }
 
-  return requestContext.run({ tenantId: record.tenantId, userId: record.id, role: record.role }, async () => {
+  // Placeholder role for this scope only: nothing inside it reads
+  // req context's role (the Prisma extension only cares about
+  // tenantId) — the real role is resolved below, once we're inside the
+  // correct tenant context and can query UserRole under RLS.
+  return requestContext.run({ tenantId: record.tenantId, userId: record.id, role: 'UNRESOLVED' }, async () => {
     if (record.lockedUntil && record.lockedUntil.getTime() > Date.now()) {
       const secondsLeft = Math.ceil((record.lockedUntil.getTime() - Date.now()) / 1000)
       throw ApiError.tooManyRequests(`Too many failed attempts. Try again in ${secondsLeft}s.`)
@@ -104,12 +122,14 @@ export async function login(email: string, password: string): Promise<{ user: Au
       throw invalidCredentials()
     }
 
+    const roleName = await getPrimaryRoleName(record.id)
+
     const [updatedUser, tokens] = await Promise.all([
       prisma.user.update({ where: { id: record.id }, data: { failedLoginAttempts: 0, lockedUntil: null } }),
-      issueTokenPair(record),
+      issueTokenPair(record, roleName),
     ])
 
-    return { user: toAuthUserDto(updatedUser), ...tokens }
+    return { user: toAuthUserDto(updatedUser, roleName), ...tokens }
   })
 }
 
@@ -121,16 +141,14 @@ export async function refresh(rawRefreshToken: string): Promise<TokenPair> {
     throw invalid()
   }
 
-  return requestContext.run(
-    { tenantId: record.tenantId, userId: record.userId, role: record.user.role },
-    async () => {
-      // Rotate: revoke the presented token and issue a fresh pair. If a
-      // stolen-then-already-used token is presented again after this,
-      // it's already revoked — worth alerting on later, not handled yet.
-      await prisma.refreshToken.update({ where: { id: record.id }, data: { revokedAt: new Date() } })
-      return issueTokenPair(record.user)
-    },
-  )
+  return requestContext.run({ tenantId: record.tenantId, userId: record.userId, role: 'UNRESOLVED' }, async () => {
+    const roleName = await getPrimaryRoleName(record.userId)
+    // Rotate: revoke the presented token and issue a fresh pair. If a
+    // stolen-then-already-used token is presented again after this,
+    // it's already revoked — worth alerting on later, not handled yet.
+    await prisma.refreshToken.update({ where: { id: record.id }, data: { revokedAt: new Date() } })
+    return issueTokenPair(record.user, roleName)
+  })
 }
 
 export async function logout(rawRefreshToken: string | undefined): Promise<void> {
@@ -140,7 +158,7 @@ export async function logout(rawRefreshToken: string | undefined): Promise<void>
   if (!record || record.revokedAt) return
 
   await requestContext.run(
-    { tenantId: record.tenantId, userId: record.userId, role: record.user.role },
+    { tenantId: record.tenantId, userId: record.userId, role: 'UNRESOLVED' },
     async () => {
       await prisma.refreshToken.update({ where: { id: record.id }, data: { revokedAt: new Date() } })
     },
@@ -152,7 +170,8 @@ export async function getCurrentUser(userId: string): Promise<AuthUserDto> {
   if (!user || !user.isActive) {
     throw ApiError.unauthorized('Account is no longer active.')
   }
-  return toAuthUserDto(user)
+  const roleName = await getPrimaryRoleName(userId)
+  return toAuthUserDto(user, roleName)
 }
 
 export async function hashPassword(plainPassword: string): Promise<string> {
