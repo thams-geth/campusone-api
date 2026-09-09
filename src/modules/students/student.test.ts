@@ -49,12 +49,12 @@ describe('students routes', () => {
   }
 
   it('rejects unauthenticated requests', async () => {
-    const res = await request(app).get('/api/students')
+    const res = await request(app).get('/api/v1/students')
     expect(res.status).toBe(401)
   })
 
   it('creates a student', async () => {
-    const res = await authed(request(app).post('/api/students')).send(
+    const res = await authed(request(app).post('/api/v1/students')).send(
       baseInput({ departmentId: department.id }),
     )
 
@@ -64,7 +64,7 @@ describe('students routes', () => {
   })
 
   it('rejects a department that does not exist', async () => {
-    const res = await authed(request(app).post('/api/students')).send(
+    const res = await authed(request(app).post('/api/v1/students')).send(
       baseInput({ departmentId: 'not-a-real-id' }),
     )
     expect(res.status).toBe(422)
@@ -72,7 +72,7 @@ describe('students routes', () => {
   })
 
   it('rejects an inactive department', async () => {
-    const res = await authed(request(app).post('/api/students')).send(
+    const res = await authed(request(app).post('/api/v1/students')).send(
       baseInput({ departmentId: inactiveDepartment.id }),
     )
     expect(res.status).toBe(422)
@@ -81,9 +81,9 @@ describe('students routes', () => {
 
   it('rejects a duplicate email', async () => {
     const email = `${shortId('dup')}@example.com`
-    await authed(request(app).post('/api/students')).send(baseInput({ departmentId: department.id, email }))
+    await authed(request(app).post('/api/v1/students')).send(baseInput({ departmentId: department.id, email }))
 
-    const res = await authed(request(app).post('/api/students')).send(
+    const res = await authed(request(app).post('/api/v1/students')).send(
       baseInput({ departmentId: department.id, email }),
     )
     expect(res.status).toBe(409)
@@ -92,11 +92,11 @@ describe('students routes', () => {
 
   it('rejects a duplicate roll number', async () => {
     const rollNumber = shortId('DR')
-    await authed(request(app).post('/api/students')).send(
+    await authed(request(app).post('/api/v1/students')).send(
       baseInput({ departmentId: department.id, rollNumber }),
     )
 
-    const res = await authed(request(app).post('/api/students')).send(
+    const res = await authed(request(app).post('/api/v1/students')).send(
       baseInput({ departmentId: department.id, rollNumber }),
     )
     expect(res.status).toBe(409)
@@ -104,18 +104,18 @@ describe('students routes', () => {
   })
 
   it('lists and filters students by department', async () => {
-    const res = await authed(request(app).get('/api/students')).query({ departmentId: department.id })
+    const res = await authed(request(app).get('/api/v1/students')).query({ departmentId: department.id })
     expect(res.status).toBe(200)
     expect(res.body.data.length).toBeGreaterThan(0)
     expect(res.body.data.every((s: { departmentId: string }) => s.departmentId === department.id)).toBe(true)
   })
 
   it('updates a student', async () => {
-    const created = await authed(request(app).post('/api/students')).send(
+    const created = await authed(request(app).post('/api/v1/students')).send(
       baseInput({ departmentId: department.id }),
     )
 
-    const res = await authed(request(app).put(`/api/students/${created.body.id}`)).send(
+    const res = await authed(request(app).put(`/api/v1/students/${created.body.id}`)).send(
       baseInput({
         departmentId: department.id,
         firstName: 'Updated',
@@ -129,14 +129,14 @@ describe('students routes', () => {
   })
 
   it('deletes a student', async () => {
-    const created = await authed(request(app).post('/api/students')).send(
+    const created = await authed(request(app).post('/api/v1/students')).send(
       baseInput({ departmentId: department.id }),
     )
 
-    const res = await authed(request(app).delete(`/api/students/${created.body.id}`))
+    const res = await authed(request(app).delete(`/api/v1/students/${created.body.id}`))
     expect(res.status).toBe(204)
 
-    const getRes = await authed(request(app).get(`/api/students/${created.body.id}`))
+    const getRes = await authed(request(app).get(`/api/v1/students/${created.body.id}`))
     expect(getRes.status).toBe(404)
   })
 })

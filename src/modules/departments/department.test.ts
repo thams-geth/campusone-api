@@ -33,23 +33,23 @@ describe('departments routes', () => {
   }
 
   it('rejects unauthenticated requests', async () => {
-    const res = await request(app).get('/api/departments')
+    const res = await request(app).get('/api/v1/departments')
     expect(res.status).toBe(401)
   })
 
   it('rejects a role outside the admin allow-list', async () => {
     const facultyUser = await createTestUser(tenant.id, 'FACULTY', 'faculty')
     const loginRes = await request(app)
-      .post('/api/auth/login')
+      .post('/api/v1/auth/login')
       .send({ email: facultyUser.email, password: TEST_PASSWORD })
 
-    const res = await request(app).get('/api/departments').set('Authorization', `Bearer ${loginRes.body.token}`)
+    const res = await request(app).get('/api/v1/departments').set('Authorization', `Bearer ${loginRes.body.token}`)
     expect(res.status).toBe(403)
   })
 
   it('creates a department and uppercases the code', async () => {
     const lowercaseCode = shortCode('cse-')
-    const res = await authed(request(app).post('/api/departments')).send({
+    const res = await authed(request(app).post('/api/v1/departments')).send({
       name: 'Computer Science',
       code: lowercaseCode,
       status: 'ACTIVE',
@@ -62,35 +62,35 @@ describe('departments routes', () => {
 
   it('rejects a duplicate department code', async () => {
     const code = shortCode('DUP')
-    await authed(request(app).post('/api/departments')).send({ name: 'First', code, status: 'ACTIVE' })
+    await authed(request(app).post('/api/v1/departments')).send({ name: 'First', code, status: 'ACTIVE' })
 
-    const res = await authed(request(app).post('/api/departments')).send({ name: 'Second', code, status: 'ACTIVE' })
+    const res = await authed(request(app).post('/api/v1/departments')).send({ name: 'Second', code, status: 'ACTIVE' })
     expect(res.status).toBe(409)
     expect(res.body.code).toBe('DUPLICATE_CODE')
   })
 
   it('lists and filters departments by search', async () => {
     const unique = `Zeta${Date.now()}`
-    await authed(request(app).post('/api/departments')).send({
+    await authed(request(app).post('/api/v1/departments')).send({
       name: unique,
       code: shortCode('Z'),
       status: 'ACTIVE',
     })
 
-    const res = await authed(request(app).get('/api/departments')).query({ search: unique })
+    const res = await authed(request(app).get('/api/v1/departments')).query({ search: unique })
     expect(res.status).toBe(200)
     expect(res.body.data).toHaveLength(1)
     expect(res.body.data[0].name).toBe(unique)
   })
 
   it('updates a department', async () => {
-    const created = await authed(request(app).post('/api/departments')).send({
+    const created = await authed(request(app).post('/api/v1/departments')).send({
       name: 'Original',
       code: shortCode('UPD'),
       status: 'ACTIVE',
     })
 
-    const res = await authed(request(app).put(`/api/departments/${created.body.id}`)).send({
+    const res = await authed(request(app).put(`/api/v1/departments/${created.body.id}`)).send({
       name: 'Renamed',
       code: created.body.code,
       status: 'INACTIVE',
@@ -111,14 +111,14 @@ describe('departments routes', () => {
         }),
     )
 
-    const res = await authed(request(app).get(`/api/departments/${otherDept.id}`))
+    const res = await authed(request(app).get(`/api/v1/departments/${otherDept.id}`))
     expect(res.status).toBe(404)
 
     await rawTestPrisma.tenant.delete({ where: { id: otherTenant.id } })
   })
 
   it('refuses to delete a department that still has students', async () => {
-    const dept = await authed(request(app).post('/api/departments')).send({
+    const dept = await authed(request(app).post('/api/v1/departments')).send({
       name: 'HasStudents',
       code: shortCode('HS'),
       status: 'ACTIVE',
@@ -142,22 +142,22 @@ describe('departments routes', () => {
       }),
     )
 
-    const res = await authed(request(app).delete(`/api/departments/${dept.body.id}`))
+    const res = await authed(request(app).delete(`/api/v1/departments/${dept.body.id}`))
     expect(res.status).toBe(409)
     expect(res.body.code).toBe('DEPARTMENT_IN_USE')
   })
 
   it('deletes a department with no students', async () => {
-    const dept = await authed(request(app).post('/api/departments')).send({
+    const dept = await authed(request(app).post('/api/v1/departments')).send({
       name: 'NoStudents',
       code: shortCode('NS'),
       status: 'ACTIVE',
     })
 
-    const res = await authed(request(app).delete(`/api/departments/${dept.body.id}`))
+    const res = await authed(request(app).delete(`/api/v1/departments/${dept.body.id}`))
     expect(res.status).toBe(204)
 
-    const getRes = await authed(request(app).get(`/api/departments/${dept.body.id}`))
+    const getRes = await authed(request(app).get(`/api/v1/departments/${dept.body.id}`))
     expect(getRes.status).toBe(404)
   })
 })

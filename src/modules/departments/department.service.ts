@@ -1,6 +1,7 @@
 import type { Department } from '@prisma/client'
 import { ApiError } from '../../utils/ApiError'
 import { prisma } from '../../prisma/client'
+import { logActivity } from '../shared/activityLog'
 import type { DepartmentInput, ListDepartmentsQuery } from './department.schema'
 
 type DepartmentWithCount = Department & { _count: { students: number } }
@@ -66,6 +67,7 @@ async function assertUniqueCode(code: string, excludeId?: string) {
 export async function createDepartment(tenantId: string, input: DepartmentInput) {
   await assertUniqueCode(input.code)
   const row = await prisma.department.create({ data: { tenantId, ...input }, include: withStudentCount })
+  await logActivity(`added the ${row.name} department`, { entity: 'Department', entityId: row.id, action: 'CREATE' })
   return toDepartmentDto(row)
 }
 
@@ -75,6 +77,7 @@ export async function updateDepartment(id: string, input: DepartmentInput) {
 
   await assertUniqueCode(input.code, id)
   const row = await prisma.department.update({ where: { id }, data: input, include: withStudentCount })
+  await logActivity(`updated department details for ${row.name}`, { entity: 'Department', entityId: row.id, action: 'UPDATE' })
   return toDepartmentDto(row)
 }
 
@@ -91,4 +94,5 @@ export async function deleteDepartment(id: string) {
   }
 
   await prisma.department.delete({ where: { id } })
+  await logActivity(`removed the ${existing.name} department`, { entity: 'Department', entityId: id, action: 'DELETE' })
 }

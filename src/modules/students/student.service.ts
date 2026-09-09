@@ -1,5 +1,6 @@
 import { ApiError } from '../../utils/ApiError'
 import { prisma } from '../../prisma/client'
+import { logActivity } from '../shared/activityLog'
 import type { ListStudentsQuery, StudentInput } from './student.schema'
 
 export async function listStudents(params: ListStudentsQuery) {
@@ -54,6 +55,15 @@ async function assertDepartmentUsable(departmentId: string) {
       'DEPARTMENT_INACTIVE',
     )
   }
+  return department
+}
+
+async function assertSectionExists(sectionId: string | undefined) {
+  if (!sectionId) return
+  const section = await prisma.section.findUnique({ where: { id: sectionId } })
+  if (!section) {
+    throw new ApiError('Selected section does not exist.', 422, 'INVALID_SECTION')
+  }
 }
 
 async function assertUniqueEmail(email: string, excludeId?: string) {
@@ -78,11 +88,12 @@ async function assertUniqueRollNumber(rollNumber: string, excludeId?: string) {
 }
 
 export async function createStudent(tenantId: string, input: StudentInput) {
-  await assertDepartmentUsable(input.departmentId)
+  const department = await assertDepartmentUsable(input.departmentId)
+  await assertSectionExists(input.sectionId)
   await assertUniqueEmail(input.email)
   await assertUniqueRollNumber(input.rollNumber)
 
-  return prisma.student.create({
+  const student = await prisma.student.create({
     data: {
       tenantId,
       ...input,
@@ -91,6 +102,8 @@ export async function createStudent(tenantId: string, input: StudentInput) {
       address: input.address || undefined,
     },
   })
+  await logActivity(`added a new student to ${department.code}`, { entity: 'Student', entityId: student.id, action: 'CREATE' })
+  return student
 }
 
 export async function updateStudent(id: string, input: StudentInput) {
@@ -98,10 +111,11 @@ export async function updateStudent(id: string, input: StudentInput) {
   if (!existing) throw ApiError.notFound('Student not found')
 
   await assertDepartmentUsable(input.departmentId)
+  await assertSectionExists(input.sectionId)
   await assertUniqueEmail(input.email, id)
   await assertUniqueRollNumber(input.rollNumber, id)
 
-  return prisma.student.update({
+  const student = await prisma.student.update({
     where: { id },
     data: {
       ...input,
@@ -110,10 +124,21 @@ export async function updateStudent(id: string, input: StudentInput) {
       address: input.address || undefined,
     },
   })
+  await logActivity(`updated contact info for ${student.firstName} ${student.lastName}`, {
+    entity: 'Student',
+    entityId: student.id,
+    action: 'UPDATE',
+  })
+  return student
 }
 
 export async function deleteStudent(id: string) {
   const existing = await prisma.student.findUnique({ where: { id } })
   if (!existing) throw ApiError.notFound('Student not found')
   await prisma.student.delete({ where: { id } })
+  await logActivity(`removed student ${existing.firstName} ${existing.lastName}`, {
+    entity: 'Student',
+    entityId: id,
+    action: 'DELETE',
+  })
 }

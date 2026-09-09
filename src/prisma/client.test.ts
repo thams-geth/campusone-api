@@ -97,4 +97,42 @@ describe('tenant isolation (RLS)', () => {
   it('throws instead of silently querying unscoped when there is no request context', async () => {
     await expect(prisma.department.findMany()).rejects.toThrow(/no request context/i)
   })
+
+  // Spot-checks for Milestone 1's new tenant-scoped tables — same
+  // mechanism as Department above, so this isn't exhaustive per table,
+  // just proof the RLS migration was applied to the new schema too.
+  it("does not let tenant B see tenant A's program", async () => {
+    const created = await requestContext.run({ tenantId: tenantA.id, userId: 'user-a', role: 'SUPER_ADMIN' }, async () => {
+      const dept = await prisma.department.create({ data: { tenantId: tenantA.id, name: 'RLS Dept', code: `RLSD-${Date.now()}` } })
+      return prisma.program.create({
+        data: { tenantId: tenantA.id, departmentId: dept.id, name: 'RLS Program', code: `RLSP-${Date.now()}`, durationYears: 4 },
+      })
+    })
+
+    const asTenantB = await requestContext.run(
+      { tenantId: tenantB.id, userId: 'user-b', role: 'SUPER_ADMIN' },
+      async () => await prisma.program.findUnique({ where: { id: created.id } }),
+    )
+
+    expect(asTenantB).toBeNull()
+  })
+
+  it("does not let tenant B see tenant A's role/user-role rows", async () => {
+    const created = await requestContext.run({ tenantId: tenantA.id, userId: 'user-a', role: 'SUPER_ADMIN' }, async () => {
+      const role = await prisma.role.create({ data: { tenantId: tenantA.id, name: `RLS_ROLE_${Date.now()}`, isSystem: false } })
+      const user = await prisma.user.create({
+        data: { tenantId: tenantA.id, name: 'RLS User', email: `rls-user-${Date.now()}@example.com`, passwordHash: 'x', isActive: true },
+      })
+      const userRole = await prisma.userRole.create({ data: { tenantId: tenantA.id, userId: user.id, roleId: role.id } })
+      return { roleId: role.id, userRoleId: userRole.id }
+    })
+
+    const asTenantB = await requestContext.run({ tenantId: tenantB.id, userId: 'user-b', role: 'SUPER_ADMIN' }, async () => ({
+      role: await prisma.role.findUnique({ where: { id: created.roleId } }),
+      userRole: await prisma.userRole.findUnique({ where: { id: created.userRoleId } }),
+    }))
+
+    expect(asTenantB.role).toBeNull()
+    expect(asTenantB.userRole).toBeNull()
+  })
 })

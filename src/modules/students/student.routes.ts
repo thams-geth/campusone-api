@@ -1,18 +1,14 @@
 import { Router } from 'express'
-import { requireAuth, requireRole } from '../../middleware/requireAuth'
+import { requireAuth, requirePermission } from '../../middleware/requireAuth'
+import { requireModule } from '../../middleware/requireModule'
 import * as studentController from './student.controller'
 
 export const studentsRouter = Router()
 
-// Matches the frontend's nav gate: every staff role can reach Students,
-// not just admins (unlike Departments).
-studentsRouter.use(
-  requireAuth,
-  requireRole('SUPER_ADMIN', 'COLLEGE_ADMIN', 'DEPARTMENT_ADMIN', 'FACULTY', 'STAFF'),
-)
+studentsRouter.use(requireAuth, requireModule('CORE'))
 
-studentsRouter.get('/', studentController.list)
-studentsRouter.get('/:id', studentController.getById)
-studentsRouter.post('/', studentController.create)
-studentsRouter.put('/:id', studentController.update)
-studentsRouter.delete('/:id', studentController.remove)
+studentsRouter.get('/', requirePermission('STUDENT_READ'), studentController.list)
+studentsRouter.get('/:id', requirePermission('STUDENT_READ'), studentController.getById)
+studentsRouter.post('/', requirePermission('STUDENT_CREATE'), studentController.create)
+studentsRouter.put('/:id', requirePermission('STUDENT_UPDATE'), studentController.update)
+studentsRouter.delete('/:id', requirePermission('STUDENT_DELETE'), studentController.remove)

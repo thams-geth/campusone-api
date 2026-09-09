@@ -10,6 +10,11 @@ export const studentInputSchema = z.object({
   phone: z.string().trim().regex(phoneRegex, 'Enter a valid phone number'),
   rollNumber: z.string().trim().min(2, 'Roll number is required').max(20),
   departmentId: z.string().min(1, 'Department is required'),
+  // Nullable/optional: the Program/Batch/Section hierarchy is new (see
+  // the roadmap plan) and existing students predate it — a student can
+  // still be created/managed department-only until assigned a section.
+  sectionId: z.string().min(1).optional(),
+  currentSemester: z.coerce.number().int().min(1).max(12).optional(),
   gender: z.nativeEnum(Gender),
   dateOfBirth: z.coerce.date(),
   admissionDate: z.coerce.date(),
