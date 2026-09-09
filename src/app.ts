@@ -24,6 +24,14 @@ import { timetableRouter } from './modules/timetable/timetable.routes'
 import { institutionRouter } from './modules/institution/institution.routes'
 import { rbacRouter } from './modules/rbac/rbac.routes'
 import { auditRouter } from './modules/audit/audit.routes'
+import { attendanceRouter } from './modules/attendance/attendance.routes'
+import { leaveRouter } from './modules/leave/leave.routes'
+import { assignmentsRouter } from './modules/assignments/assignment.routes'
+import { examinationsRouter } from './modules/examinations/examination.routes'
+import { announcementsRouter } from './modules/announcements/announcement.routes'
+import { documentsRouter } from './modules/documents/document.routes'
+import { reportsRouter } from './modules/reports/report.routes'
+import { importExportRouter } from './modules/import-export/importExport.routes'
 
 export function createApp() {
   const app = express()
@@ -88,6 +96,14 @@ export function createApp() {
   v1.use('/timetable', timetableRouter)
   v1.use('/institution', institutionRouter)
   v1.use('/audit-logs', auditRouter)
+  v1.use('/attendance', attendanceRouter)
+  v1.use('/leave', leaveRouter)
+  v1.use('/assignments', assignmentsRouter)
+  v1.use('/examinations', examinationsRouter)
+  v1.use('/announcements', announcementsRouter)
+  v1.use('/documents', documentsRouter)
+  v1.use('/reports', reportsRouter)
+  v1.use('/import-export', importExportRouter)
   // Roles/permissions admin surface — its own routes (/roles,
   // /permissions, /users/:id/role) rather than one resource prefix.
   v1.use(rbacRouter)
