@@ -5,6 +5,12 @@ export interface AuditDetails {
   entity?: string
   entityId?: string
   action?: string
+  // Optional before/after snapshot for sensitive changes — e.g. an
+  // approved attendance correction or a marks revision after publish
+  // (roadmap: "published/locked changes require authorization and an
+  // audit record"). Keep these small; they're stored as-is in JSONB.
+  before?: unknown
+  after?: unknown
 }
 
 /**
@@ -25,6 +31,8 @@ export async function logActivity(message: string, details: AuditDetails = {}): 
       entity: details.entity,
       entityId: details.entityId,
       action: details.action,
+      before: details.before as never,
+      after: details.after as never,
       requestId: ctx.requestId,
     },
   })

@@ -191,6 +191,76 @@ export async function createTestFaculty(tenantId: string, departmentId: string, 
   })
 }
 
+export async function createTestStudent(
+  tenantId: string,
+  departmentId: string,
+  overrides: Partial<{ sectionId: string; rollNumber: string; email: string }> = {},
+) {
+  return withBootstrapContext(tenantId, async () =>
+    await prisma.student.create({
+      data: {
+        tenantId,
+        firstName: 'Test',
+        lastName: 'Student',
+        email: overrides.email ?? `${shortId('student')}@example.com`,
+        phone: '+91 9000000000',
+        rollNumber: overrides.rollNumber ?? shortId('R'),
+        departmentId,
+        sectionId: overrides.sectionId,
+        gender: 'OTHER',
+        dateOfBirth: new Date('2003-01-01'),
+        admissionDate: new Date('2023-06-01'),
+        status: 'ACTIVE',
+      },
+    }),
+  )
+}
+
+/**
+ * Creates a Student *with* a linked login account (role STUDENT) — for
+ * self-service tests (leave requests, assignment submissions, viewing
+ * own marks). Most students created via createTestStudent have no
+ * login at all, matching production (Student.userId is nullable, no
+ * self-registration flow exists yet).
+ */
+export async function createTestStudentUser(
+  tenantId: string,
+  departmentId: string,
+  overrides: Partial<{ sectionId: string }> = {},
+) {
+  return withBootstrapContext(tenantId, async () => {
+    const studentRole = await prisma.role.findFirstOrThrow({ where: { tenantId, name: 'STUDENT' } })
+    const user = await prisma.user.create({
+      data: {
+        tenantId,
+        name: 'Test Student',
+        email: `${shortId('studentuser')}@example.com`,
+        passwordHash: await hashPassword(TEST_PASSWORD),
+        isActive: true,
+      },
+    })
+    await prisma.userRole.create({ data: { tenantId, userId: user.id, roleId: studentRole.id } })
+    const student = await prisma.student.create({
+      data: {
+        tenantId,
+        userId: user.id,
+        firstName: 'Test',
+        lastName: 'Student',
+        email: user.email,
+        phone: '+91 9000000000',
+        rollNumber: shortId('R'),
+        departmentId,
+        sectionId: overrides.sectionId,
+        gender: 'OTHER',
+        dateOfBirth: new Date('2003-01-01'),
+        admissionDate: new Date('2023-06-01'),
+        status: 'ACTIVE',
+      },
+    })
+    return { student, user }
+  })
+}
+
 /** Every module besides CORE starts disabled — flip one on for a test tenant (see requireModule). */
 export async function enableModule(tenantId: string, moduleId: ModuleId) {
   return withBootstrapContext(tenantId, async () =>
