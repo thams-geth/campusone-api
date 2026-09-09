@@ -6,19 +6,6 @@ datasource db {
   provider = "postgresql"
 }
 
-// Every permission check is "does user X have role Y inside tenant Z" —
-// never just "does this user have role Y." PLATFORM_ADMIN is the only
-// role that isn't scoped to a single tenant.
-enum Role {
-  PLATFORM_ADMIN
-  SUPER_ADMIN
-  COLLEGE_ADMIN
-  DEPARTMENT_ADMIN
-  FACULTY
-  STAFF
-  STUDENT
-}
-
 enum ModuleId {
   CORE
   ACADEMICS
@@ -57,6 +44,56 @@ enum Gender {
   OTHER
 }
 
+enum AcademicYearStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum ProgramStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum BatchStatus {
+  ACTIVE
+  INACTIVE
+  GRADUATED
+}
+
+enum SectionStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SubjectType {
+  CORE
+  ELECTIVE
+  LAB
+  PROJECT
+  SEMINAR
+  PRACTICAL
+}
+
+enum FacultyStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum RoomStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
 model Tenant {
   id           String   @id @default(cuid())
   name         String
@@ -67,9 +104,19 @@ model Tenant {
 
   modules       TenantModule[]
   users         User[]
+  roles         Role[]
+  userRoles     UserRole[]
   departments   Department[]
+  academicYears AcademicYear[]
+  programs      Program[]
+  batches       Batch[]
+  sections      Section[]
+  subjects      Subject[]
+  faculty       Faculty[]
+  rooms         Room[]
+  timetableEntries TimetableEntry[]
   students      Student[]
-  activityLogs  ActivityLog[]
+  auditLogs     AuditLog[]
   refreshTokens RefreshToken[]
 }
 
@@ -89,6 +136,69 @@ model TenantModule {
   @@unique([tenantId, moduleId])
 }
 
+// Dynamic RBAC (roadmap #23 — "do not hardcode all permissions around
+// roles"). tenantId is nullable ONLY for the single cross-tenant
+// PLATFORM_ADMIN role; every other role is seeded per-tenant (see
+// src/modules/rbac/rbac.seed.ts) so a tenant could eventually define
+// custom roles without touching other tenants' data.
+model Role {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  isSystem  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+// Global reference data (not tenant-scoped) — the fixed catalogue of
+// grantable capabilities, e.g. "STUDENT_READ". No RLS: not sensitive,
+// and every route that reads it is already behind requireAuth.
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  description String
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  tenantId     String?
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([tenantId])
+  @@index([roleId])
+}
+
+// Join table so a user can hold more than one role later; today every
+// user is seeded with exactly one row here at creation time.
+model UserRole {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, roleId])
+  @@index([tenantId])
+  @@index([userId])
+}
+
 // Email is globally unique (not per-tenant) so a single login form can
 // resolve the tenant from the email alone, without asking the user to
 // pick a college first.
@@ -99,15 +209,16 @@ model User {
   name                String
   email               String    @unique
   passwordHash        String
-  role                Role
   isActive            Boolean   @default(true)
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
+  roles         UserRole[]
   refreshTokens RefreshToken[]
-  activityLogs  ActivityLog[]
+  auditLogs     AuditLog[]
+  facultyProfile Faculty?
 
   @@index([tenantId])
 }
@@ -138,49 +249,241 @@ model Department {
   headOfDepartment String?
   description      String?
   status           DepartmentStatus @default(ACTIVE)
-  // No Faculty entity exists yet (out of V1 scope) — stored directly
-  // for now instead of a relation count, matching the frontend's mock
-  // contract. Revisit once a Faculty module exists.
+  // No Faculty entity existed at first (out of V1 scope) — stored
+  // directly for now instead of a relation count, matching the
+  // frontend's mock contract. Faculty now exists (see below); this
+  // stays as a manual override field until the dashboard/department
+  // list switches to a live faculty count.
   facultyCount     Int              @default(0)
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
   students Student[]
+  programs Program[]
+  faculty  Faculty[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
 }
 
+model AcademicYear {
+  id        String             @id @default(cuid())
+  tenantId  String
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  isCurrent Boolean            @default(false)
+  status    AcademicYearStatus @default(ACTIVE)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  batches Batch[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Program {
+  id           String        @id @default(cuid())
+  tenantId     String
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  departmentId String
+  department   Department    @relation(fields: [departmentId], references: [id])
+  name         String
+  code         String
+  durationYears Int
+  status       ProgramStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  batches  Batch[]
+  subjects Subject[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([departmentId])
+}
+
+model Batch {
+  id             String      @id @default(cuid())
+  tenantId       String
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  programId      String
+  program        Program     @relation(fields: [programId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  name           String
+  startYear      Int
+  endYear        Int
+  status         BatchStatus @default(ACTIVE)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  sections Section[]
+
+  @@unique([tenantId, programId, name])
+  @@index([tenantId])
+  @@index([programId])
+  @@index([academicYearId])
+}
+
+model Section {
+  id              String        @id @default(cuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  batchId         String
+  batch           Batch         @relation(fields: [batchId], references: [id])
+  name            String
+  currentSemester Int
+  capacity        Int?
+  status          SectionStatus @default(ACTIVE)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  students          Student[]
+  timetableEntries  TimetableEntry[]
+
+  @@unique([tenantId, batchId, name])
+  @@index([tenantId])
+  @@index([batchId])
+}
+
+model Subject {
+  id             String      @id @default(cuid())
+  tenantId       String
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  programId      String
+  program        Program     @relation(fields: [programId], references: [id])
+  semesterNumber Int
+  code           String
+  name           String
+  credits        Int
+  type           SubjectType @default(CORE)
+  facultyId      String?
+  faculty        Faculty?    @relation(fields: [facultyId], references: [id], onDelete: SetNull)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  timetableEntries TimetableEntry[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([programId])
+  @@index([facultyId])
+}
+
+// One-to-one with a User that holds role FACULTY — auth/identity stays
+// on User, employment/academic profile lives here.
+model Faculty {
+  id              String        @id @default(cuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId          String        @unique
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employeeCode    String
+  departmentId    String
+  department      Department    @relation(fields: [departmentId], references: [id])
+  designation     String
+  qualification   String?
+  experienceYears Int           @default(0)
+  joiningDate     DateTime
+  status          FacultyStatus @default(ACTIVE)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  subjects         Subject[]
+  timetableEntries TimetableEntry[]
+
+  @@unique([tenantId, employeeCode])
+  @@index([tenantId])
+  @@index([departmentId])
+}
+
+// Deliberately flat — no Campus/Building/Floor hierarchy yet (out of
+// this milestone's scope). Extend with a nullable buildingId later.
+model Room {
+  id        String     @id @default(cuid())
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  code      String
+  capacity  Int?
+  status    RoomStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  timetableEntries TimetableEntry[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+// One row per (section, weekday, period) slot. Conflict detection
+// (faculty/room/section double-booking) is enforced in
+// timetable.service.ts, not by a DB constraint, since it depends on
+// overlapping start/end times rather than exact equality.
+model TimetableEntry {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sectionId String
+  section   Section  @relation(fields: [sectionId], references: [id])
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id])
+  facultyId String
+  faculty   Faculty  @relation(fields: [facultyId], references: [id])
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id])
+  dayOfWeek Weekday
+  startTime String   // "HH:mm", 24h — a plain time-of-day, not tied to a date
+  endTime   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([sectionId, dayOfWeek])
+  @@index([facultyId, dayOfWeek])
+  @@index([roomId, dayOfWeek])
+}
+
 model Student {
-  id            String        @id @default(cuid())
-  tenantId      String
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  firstName     String
-  lastName      String
-  email         String
-  phone         String
-  rollNumber    String
-  departmentId  String
-  department    Department    @relation(fields: [departmentId], references: [id])
-  gender        Gender
-  dateOfBirth   DateTime
-  admissionDate DateTime
-  status        StudentStatus @default(ACTIVE)
-  guardianName  String?
-  guardianPhone String?
-  address       String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id              String        @id @default(cuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  firstName       String
+  lastName        String
+  email           String
+  phone           String
+  rollNumber      String
+  departmentId    String
+  department      Department    @relation(fields: [departmentId], references: [id])
+  sectionId       String?
+  section         Section?      @relation(fields: [sectionId], references: [id])
+  currentSemester Int?
+  gender          Gender
+  dateOfBirth     DateTime
+  admissionDate   DateTime
+  status          StudentStatus @default(ACTIVE)
+  guardianName    String?
+  guardianPhone   String?
+  address         String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@unique([tenantId, email])
   @@unique([tenantId, rollNumber])
   @@index([tenantId])
   @@index([departmentId])
+  @@index([sectionId])
 }
 
-// Backs the dashboard's recent-activity feed. Written to by mutations
-// in other modules (department/student create/update/delete).
-model ActivityLog {
+// Structured audit trail (roadmap #25), generalized from the earlier
+// ActivityLog. `message` alone still backs the dashboard's
+// recent-activity feed (see src/modules/shared/activityLog.ts); the
+// rest is populated by the audit module's own writer for anything that
+// needs the full before/after record.
+model AuditLog {
   id          String   @id @default(cuid())
   tenantId    String
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -188,7 +491,16 @@ model ActivityLog {
   actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
   actorName   String
   message     String
+  entity      String?
+  entityId    String?
+  action      String?
+  before      Json?
+  after       Json?
+  ipAddress   String?
+  userAgent   String?
+  requestId   String?
   createdAt   DateTime @default(now())
 
   @@index([tenantId, createdAt])
+  @@index([tenantId, entity, entityId])
 }
