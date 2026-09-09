@@ -94,6 +94,104 @@ enum Weekday {
   SUNDAY
 }
 
+enum AttendanceSessionStatus {
+  DRAFT
+  SUBMITTED
+  LOCKED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+  ON_LEAVE
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum AssignmentStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum SubmissionStatus {
+  SUBMITTED
+  LATE
+  EVALUATED
+}
+
+enum ExamType {
+  INTERNAL
+  MIDTERM
+  FINAL
+  SUPPLEMENTARY
+}
+
+enum ExamStatus {
+  SCHEDULED
+  ONGOING
+  COMPLETED
+}
+
+enum MarksStatus {
+  DRAFT
+  SUBMITTED
+  VERIFIED
+  PUBLISHED
+}
+
+enum MarksSpecialStatus {
+  ABSENT
+  MALPRACTICE
+  WITHHELD
+}
+
+enum AnnouncementAudience {
+  COLLEGE
+  DEPARTMENT
+  PROGRAM
+  BATCH
+  SECTION
+}
+
+enum AnnouncementPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum DocumentOwnerType {
+  STUDENT
+  FACULTY
+}
+
+enum DocumentType {
+  BONAFIDE
+  TRANSFER_CERTIFICATE
+  CONDUCT_CERTIFICATE
+  MARK_SHEET
+  ID_PROOF
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 model Tenant {
   id           String   @id @default(cuid())
   name         String
@@ -102,22 +200,34 @@ model Tenant {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  modules       TenantModule[]
-  users         User[]
-  roles         Role[]
-  userRoles     UserRole[]
-  departments   Department[]
-  academicYears AcademicYear[]
-  programs      Program[]
-  batches       Batch[]
-  sections      Section[]
-  subjects      Subject[]
-  faculty       Faculty[]
-  rooms         Room[]
-  timetableEntries TimetableEntry[]
-  students      Student[]
-  auditLogs     AuditLog[]
-  refreshTokens RefreshToken[]
+  modules               TenantModule[]
+  users                 User[]
+  roles                 Role[]
+  userRoles             UserRole[]
+  departments           Department[]
+  academicYears         AcademicYear[]
+  programs              Program[]
+  batches               Batch[]
+  sections              Section[]
+  subjects              Subject[]
+  faculty               Faculty[]
+  rooms                 Room[]
+  timetableEntries      TimetableEntry[]
+  students              Student[]
+  auditLogs             AuditLog[]
+  refreshTokens         RefreshToken[]
+  attendanceSessions    AttendanceSession[]
+  attendanceRecords     AttendanceRecord[]
+  attendanceCorrections AttendanceCorrection[]
+  leaveTypes            LeaveType[]
+  leaveRequests         LeaveRequest[]
+  assignments           Assignment[]
+  assignmentSubmissions AssignmentSubmission[]
+  exams                 Exam[]
+  examSchedules         ExamSchedule[]
+  marks                 Marks[]
+  announcements         Announcement[]
+  documents             Document[]
 }
 
 // tenant_modules: which modules a tenant has installed/enabled, and at
@@ -215,10 +325,22 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  roles         UserRole[]
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
+  roles          UserRole[]
+  refreshTokens  RefreshToken[]
+  auditLogs      AuditLog[]
   facultyProfile Faculty?
+  studentProfile Student?
+
+  attendanceCorrectionsRequested AttendanceCorrection[] @relation("AttendanceCorrectionRequestedBy")
+  attendanceCorrectionsReviewed  AttendanceCorrection[] @relation("AttendanceCorrectionReviewedBy")
+  leaveRequestsReviewed          LeaveRequest[]         @relation("LeaveRequestReviewedBy")
+  assignmentSubmissionsEvaluated AssignmentSubmission[] @relation("AssignmentSubmissionEvaluatedBy")
+  marksEntered                   Marks[]                @relation("MarksEnteredBy")
+  marksVerified                  Marks[]                @relation("MarksVerifiedBy")
+  marksPublished                 Marks[]                @relation("MarksPublishedBy")
+  announcementsAuthored          Announcement[]         @relation("AnnouncementAuthor")
+  documentsUploaded              Document[]             @relation("DocumentUploadedBy")
+  documentsVerified              Document[]             @relation("DocumentVerifiedBy")
 
   @@index([tenantId])
 }
@@ -279,23 +401,24 @@ model AcademicYear {
   updatedAt DateTime           @updatedAt
 
   batches Batch[]
+  exams   Exam[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
 }
 
 model Program {
-  id           String        @id @default(cuid())
-  tenantId     String
-  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  departmentId String
-  department   Department    @relation(fields: [departmentId], references: [id])
-  name         String
-  code         String
+  id            String        @id @default(cuid())
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  departmentId  String
+  department    Department    @relation(fields: [departmentId], references: [id])
+  name          String
+  code          String
   durationYears Int
-  status       ProgramStatus @default(ACTIVE)
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  status        ProgramStatus @default(ACTIVE)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
   batches  Batch[]
   subjects Subject[]
@@ -306,19 +429,19 @@ model Program {
 }
 
 model Batch {
-  id             String      @id @default(cuid())
+  id             String       @id @default(cuid())
   tenantId       String
-  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   programId      String
-  program        Program     @relation(fields: [programId], references: [id])
+  program        Program      @relation(fields: [programId], references: [id])
   academicYearId String
   academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
   name           String
   startYear      Int
   endYear        Int
-  status         BatchStatus @default(ACTIVE)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  status         BatchStatus  @default(ACTIVE)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   sections Section[]
 
@@ -341,8 +464,10 @@ model Section {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  students          Student[]
-  timetableEntries  TimetableEntry[]
+  students           Student[]
+  timetableEntries   TimetableEntry[]
+  attendanceSessions AttendanceSession[]
+  assignments        Assignment[]
 
   @@unique([tenantId, batchId, name])
   @@index([tenantId])
@@ -365,7 +490,10 @@ model Subject {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
-  timetableEntries TimetableEntry[]
+  timetableEntries   TimetableEntry[]
+  attendanceSessions AttendanceSession[]
+  assignments        Assignment[]
+  examSchedules      ExamSchedule[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -392,8 +520,10 @@ model Faculty {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  subjects         Subject[]
-  timetableEntries TimetableEntry[]
+  subjects           Subject[]
+  timetableEntries   TimetableEntry[]
+  attendanceSessions AttendanceSession[]
+  assignments        Assignment[]
 
   @@unique([tenantId, employeeCode])
   @@index([tenantId])
@@ -414,6 +544,7 @@ model Room {
   updatedAt DateTime   @updatedAt
 
   timetableEntries TimetableEntry[]
+  examSchedules    ExamSchedule[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -436,7 +567,7 @@ model TimetableEntry {
   roomId    String
   room      Room     @relation(fields: [roomId], references: [id])
   dayOfWeek Weekday
-  startTime String   // "HH:mm", 24h — a plain time-of-day, not tied to a date
+  startTime String // "HH:mm", 24h — a plain time-of-day, not tied to a date
   endTime   String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -461,6 +592,12 @@ model Student {
   sectionId       String?
   section         Section?      @relation(fields: [sectionId], references: [id])
   currentSemester Int?
+  // Nullable, unlike Faculty's required userId: a Student row predates
+  // any login account (created by admin data entry) and self-service
+  // (leave requests, assignment submissions, viewing own marks) only
+  // becomes possible once one is linked. No backfill for existing rows.
+  userId          String?       @unique
+  user            User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   gender          Gender
   dateOfBirth     DateTime
   admissionDate   DateTime
@@ -470,6 +607,11 @@ model Student {
   address         String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+
+  attendanceRecords     AttendanceRecord[]
+  leaveRequests         LeaveRequest[]
+  assignmentSubmissions AssignmentSubmission[]
+  marks                 Marks[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, rollNumber])
@@ -503,4 +645,294 @@ model AuditLog {
 
   @@index([tenantId, createdAt])
   @@index([tenantId, entity, entityId])
+}
+
+// Attendance (roadmap #7) — one session per (section, subject, date).
+// DRAFT -> SUBMITTED -> LOCKED; once LOCKED, records can't be edited
+// directly, only through AttendanceCorrection's approve/reject flow —
+// the roadmap's own flagship "not just CRUD" example (#45).
+model AttendanceSession {
+  id        String                  @id @default(cuid())
+  tenantId  String
+  tenant    Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sectionId String
+  section   Section                 @relation(fields: [sectionId], references: [id])
+  subjectId String
+  subject   Subject                 @relation(fields: [subjectId], references: [id])
+  facultyId String
+  faculty   Faculty                 @relation(fields: [facultyId], references: [id])
+  date      DateTime
+  status    AttendanceSessionStatus @default(DRAFT)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  records AttendanceRecord[]
+
+  @@unique([tenantId, sectionId, subjectId, date])
+  @@index([tenantId])
+  @@index([sectionId, date])
+  @@index([facultyId, date])
+}
+
+model AttendanceRecord {
+  id        String            @id @default(cuid())
+  tenantId  String
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessionId String
+  session   AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student           @relation(fields: [studentId], references: [id])
+  status    AttendanceStatus  @default(PRESENT)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  corrections AttendanceCorrection[]
+
+  @@unique([sessionId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+model AttendanceCorrection {
+  id                String           @id @default(cuid())
+  tenantId          String
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recordId          String
+  record            AttendanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  requestedStatus   AttendanceStatus
+  reason            String
+  status            CorrectionStatus @default(PENDING)
+  requestedByUserId String
+  requestedBy       User             @relation("AttendanceCorrectionRequestedBy", fields: [requestedByUserId], references: [id])
+  reviewedByUserId  String?
+  reviewedBy        User?            @relation("AttendanceCorrectionReviewedBy", fields: [reviewedByUserId], references: [id])
+  reviewedAt        DateTime?
+  createdAt         DateTime         @default(now())
+
+  @@index([tenantId])
+  @@index([recordId])
+}
+
+// Leave (roadmap #16) — "leave and attendance should be integrated":
+// approving a request updates any existing AttendanceRecord rows for
+// that student in the date range to ON_LEAVE. Balance is computed on
+// read (approved days per type per year), not a stored ledger.
+model LeaveType {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name               String
+  defaultDaysPerYear Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  requests LeaveRequest[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model LeaveRequest {
+  id               String             @id @default(cuid())
+  tenantId         String
+  tenant           Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          Student            @relation(fields: [studentId], references: [id])
+  leaveTypeId      String
+  leaveType        LeaveType          @relation(fields: [leaveTypeId], references: [id])
+  startDate        DateTime
+  endDate          DateTime
+  reason           String
+  status           LeaveRequestStatus @default(PENDING)
+  reviewedByUserId String?
+  reviewedBy       User?              @relation("LeaveRequestReviewedBy", fields: [reviewedByUserId], references: [id])
+  reviewedAt       DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+// Assignments (roadmap #8). attachmentUrl is a client-supplied
+// reference, not an uploaded file — no object storage wired up yet.
+model Assignment {
+  id          String           @id @default(cuid())
+  tenantId    String
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subjectId   String
+  subject     Subject          @relation(fields: [subjectId], references: [id])
+  facultyId   String
+  faculty     Faculty          @relation(fields: [facultyId], references: [id])
+  sectionId   String
+  section     Section          @relation(fields: [sectionId], references: [id])
+  title       String
+  description String?
+  startDate   DateTime
+  dueDate     DateTime
+  maxMarks    Int
+  status      AssignmentStatus @default(DRAFT)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  submissions AssignmentSubmission[]
+
+  @@index([tenantId])
+  @@index([sectionId])
+  @@index([subjectId])
+}
+
+model AssignmentSubmission {
+  id                String           @id @default(cuid())
+  tenantId          String
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignmentId      String
+  assignment        Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId         String
+  student           Student          @relation(fields: [studentId], references: [id])
+  submittedAt       DateTime         @default(now())
+  attachmentUrl     String?
+  status            SubmissionStatus @default(SUBMITTED)
+  marksObtained     Int?
+  feedback          String?
+  evaluatedByUserId String?
+  evaluatedBy       User?            @relation("AssignmentSubmissionEvaluatedBy", fields: [evaluatedByUserId], references: [id])
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([assignmentId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+// Examinations (roadmap #9). No separate ExamRoom/ExamInvigilator/
+// ExamRegistration (a single roomId; registration is implicit — any
+// student in the section is eligible) and no Revaluation/
+// SupplementaryExam entities (folded into Marks.specialStatus) —
+// reasonable simplifications with no CBCS/elective registration yet.
+model Exam {
+  id             String       @id @default(cuid())
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name           String
+  examType       ExamType
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  semesterNumber Int
+  startDate      DateTime
+  endDate        DateTime
+  status         ExamStatus   @default(SCHEDULED)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  schedules ExamSchedule[]
+
+  @@index([tenantId])
+  @@index([academicYearId])
+}
+
+model ExamSchedule {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  examId    String
+  exam      Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject  @relation(fields: [subjectId], references: [id])
+  examDate  DateTime
+  startTime String
+  endTime   String
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  marks Marks[]
+
+  @@unique([examId, subjectId])
+  @@index([tenantId])
+  @@index([roomId, examDate])
+}
+
+// Once PUBLISHED, direct edits stop — see MARKS_REVISE in
+// src/modules/rbac/permissions.ts, which requires a before/after audit
+// record (roadmap: "published marks changes require authorization and
+// an audit record"). Grade letters/SGPA/CGPA are computed on read in
+// examinations.service.ts, not stored, to avoid a second source of
+// truth that can drift from the underlying marks.
+model Marks {
+  id                String              @id @default(cuid())
+  tenantId          String
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  examScheduleId    String
+  examSchedule      ExamSchedule        @relation(fields: [examScheduleId], references: [id], onDelete: Cascade)
+  studentId         String
+  student           Student             @relation(fields: [studentId], references: [id])
+  marksObtained     Int?
+  maxMarks          Int
+  status            MarksStatus         @default(DRAFT)
+  specialStatus     MarksSpecialStatus?
+  enteredByUserId   String?
+  enteredBy         User?               @relation("MarksEnteredBy", fields: [enteredByUserId], references: [id])
+  verifiedByUserId  String?
+  verifiedBy        User?               @relation("MarksVerifiedBy", fields: [verifiedByUserId], references: [id])
+  publishedByUserId String?
+  publishedBy       User?               @relation("MarksPublishedBy", fields: [publishedByUserId], references: [id])
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([examScheduleId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+// Announcements (roadmap #12) — in-app only, no SMS/WhatsApp/email/push
+// delivery yet (rest of the COMMUNICATION module, deferred same as
+// Notifications was in Milestone 1).
+model Announcement {
+  id           String               @id @default(cuid())
+  tenantId     String
+  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title        String
+  content      String
+  authorUserId String
+  author       User                 @relation("AnnouncementAuthor", fields: [authorUserId], references: [id])
+  audience     AnnouncementAudience
+  departmentId String?
+  programId    String?
+  batchId      String?
+  sectionId    String?
+  priority     AnnouncementPriority @default(MEDIUM)
+  publishAt    DateTime             @default(now())
+  expiryAt     DateTime?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, publishAt])
+}
+
+// Documents (roadmap #15) — generic document metadata; fileUrl is a
+// reference to wherever the file actually lives, not an uploaded file
+// (no object storage wired up yet, same reasoning as Assignments).
+model Document {
+  id               String            @id @default(cuid())
+  tenantId         String
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ownerType        DocumentOwnerType
+  ownerId          String
+  type             DocumentType
+  fileUrl          String
+  version          Int               @default(1)
+  uploadedByUserId String
+  uploadedBy       User              @relation("DocumentUploadedBy", fields: [uploadedByUserId], references: [id])
+  verifiedByUserId String?
+  verifiedBy       User?             @relation("DocumentVerifiedBy", fields: [verifiedByUserId], references: [id])
+  status           DocumentStatus    @default(PENDING)
+  expiryDate       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, ownerType, ownerId])
 }
