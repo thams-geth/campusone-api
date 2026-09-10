@@ -1,7 +1,8 @@
 import type { Request, Response } from 'express'
 import { env } from '../../config/env'
 import { ApiError } from '../../utils/ApiError'
-import { loginSchema } from './auth.schema'
+import { requireParam } from '../../utils/params'
+import { loginSchema, mfaCodeSchema } from './auth.schema'
 import * as authService from './auth.service'
 
 const REFRESH_COOKIE_NAME = 'refreshToken'
@@ -28,8 +29,13 @@ function clearRefreshCookie(res: Response) {
 }
 
 export async function login(req: Request, res: Response) {
-  const { email, password } = loginSchema.parse(req.body)
-  const result = await authService.login(email, password)
+  const { email, password, mfaCode } = loginSchema.parse(req.body)
+  const userAgent = req.headers['user-agent']
+  const result = await authService.login(email, password, {
+    mfaCode,
+    ipAddress: req.ip,
+    userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent,
+  })
 
   setRefreshCookie(res, result.refreshToken, result.refreshTokenExpiresAt)
   res.json({ user: result.user, token: result.accessToken })
@@ -56,4 +62,36 @@ export async function me(req: Request, res: Response) {
   // requireAuth guarantees req.auth is set before this handler runs.
   const user = await authService.getCurrentUser(req.auth!.userId)
   res.json({ user })
+}
+
+export async function setupMfa(req: Request, res: Response) {
+  const result = await authService.setupMfa(req.auth!.userId)
+  res.json(result)
+}
+
+export async function enableMfa(req: Request, res: Response) {
+  const { code } = mfaCodeSchema.parse(req.body)
+  await authService.enableMfa(req.auth!.userId, code)
+  res.status(204).end()
+}
+
+export async function disableMfa(req: Request, res: Response) {
+  const { code } = mfaCodeSchema.parse(req.body)
+  await authService.disableMfa(req.auth!.userId, code)
+  res.status(204).end()
+}
+
+export async function listSessions(req: Request, res: Response) {
+  const sessions = await authService.listSessions(req.auth!.userId)
+  res.json(sessions)
+}
+
+export async function revokeSession(req: Request, res: Response) {
+  await authService.revokeSession(req.auth!.userId, requireParam(req, 'id'))
+  res.status(204).end()
+}
+
+export async function listLoginHistory(req: Request, res: Response) {
+  const history = await authService.listLoginHistory(req.auth!.userId)
+  res.json(history)
 }

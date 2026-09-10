@@ -7,6 +7,7 @@ import { env } from '../../config/env'
 import { ApiError } from '../../utils/ApiError'
 import { findRefreshTokenByHash, findUserByEmailForLogin, prisma } from '../../prisma/client'
 import { requestContext } from '../../prisma/tenantContext'
+import { buildOtpauthUri, generateTotpSecret, verifyTotp } from '../../utils/totp'
 import type { AccessTokenPayload } from './token.types'
 
 const SALT_ROUNDS = 12
@@ -17,6 +18,7 @@ const MAX_FAILED_ATTEMPTS = 5
 // whatever sits in front of this API in production.
 const LOCKOUT_MS = 30_000
 const REFRESH_TOKEN_BYTES = 48
+const RECOVERY_CODE_COUNT = 10
 
 export interface AuthUserDto {
   id: string
@@ -25,12 +27,19 @@ export interface AuthUserDto {
   email: string
   role: string
   isActive: boolean
+  mfaEnabled: boolean
 }
 
 export interface TokenPair {
   accessToken: string
   refreshToken: string
   refreshTokenExpiresAt: Date
+}
+
+export interface LoginOptions {
+  mfaCode?: string
+  ipAddress?: string
+  userAgent?: string
 }
 
 export function toAuthUserDto(user: User, role: string): AuthUserDto {
@@ -41,6 +50,7 @@ export function toAuthUserDto(user: User, role: string): AuthUserDto {
     email: user.email,
     role,
     isActive: user.isActive,
+    mfaEnabled: user.mfaEnabled,
   }
 }
 
@@ -59,6 +69,10 @@ export async function getPrimaryRoleName(userId: string): Promise<string> {
 }
 
 function hashRefreshToken(raw: string): string {
+  return crypto.createHash('sha256').update(raw).digest('hex')
+}
+
+function hashRecoveryCode(raw: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex')
 }
 
@@ -91,10 +105,28 @@ function invalidCredentials(): ApiError {
   return ApiError.unauthorized('Invalid email or password.')
 }
 
-export async function login(email: string, password: string): Promise<{ user: AuthUserDto } & TokenPair> {
-  const record = await findUserByEmailForLogin(email)
+async function recordLoginHistory(tenantId: string, userId: string, success: boolean, options: LoginOptions) {
+  await prisma.loginHistory.create({
+    data: { tenantId, userId, success, ipAddress: options.ipAddress, userAgent: options.userAgent },
+  })
+}
 
-  if (!record || !record.isActive) {
+/** Checks a TOTP code first, then falls back to a one-time recovery code — same field on the wire, either works. */
+async function verifyMfaCode(userId: string, secret: string, code: string): Promise<boolean> {
+  if (verifyTotp(secret, code)) return true
+
+  const recoveryCode = await prisma.mfaRecoveryCode.findFirst({
+    where: { userId, codeHash: hashRecoveryCode(code), usedAt: null },
+  })
+  if (!recoveryCode) return false
+
+  await prisma.mfaRecoveryCode.update({ where: { id: recoveryCode.id }, data: { usedAt: new Date() } })
+  return true
+}
+
+export async function login(email: string, password: string, options: LoginOptions = {}): Promise<{ user: AuthUserDto } & TokenPair> {
+  const record = await findUserByEmailForLogin(email)
+  if (!record) {
     throw invalidCredentials()
   }
 
@@ -103,7 +135,15 @@ export async function login(email: string, password: string): Promise<{ user: Au
   // tenantId) — the real role is resolved below, once we're inside the
   // correct tenant context and can query UserRole under RLS.
   return requestContext.run({ tenantId: record.tenantId, userId: record.id, role: 'UNRESOLVED' }, async () => {
+    const recordFailure = () => recordLoginHistory(record.tenantId, record.id, false, options)
+
+    if (!record.isActive) {
+      await recordFailure()
+      throw invalidCredentials()
+    }
+
     if (record.lockedUntil && record.lockedUntil.getTime() > Date.now()) {
+      await recordFailure()
       const secondsLeft = Math.ceil((record.lockedUntil.getTime() - Date.now()) / 1000)
       throw ApiError.tooManyRequests(`Too many failed attempts. Try again in ${secondsLeft}s.`)
     }
@@ -119,7 +159,18 @@ export async function login(email: string, password: string): Promise<{ user: Au
           lockedUntil: lockingNow ? new Date(Date.now() + LOCKOUT_MS) : null,
         },
       })
+      await recordFailure()
       throw invalidCredentials()
+    }
+
+    if (record.mfaEnabled) {
+      const mfaValid = options.mfaCode ? await verifyMfaCode(record.id, record.mfaSecret!, options.mfaCode) : false
+      if (!mfaValid) {
+        await recordFailure()
+        throw options.mfaCode
+          ? new ApiError('Invalid MFA code.', 401, 'MFA_INVALID')
+          : new ApiError('MFA code required.', 401, 'MFA_REQUIRED')
+      }
     }
 
     const roleName = await getPrimaryRoleName(record.id)
@@ -128,6 +179,7 @@ export async function login(email: string, password: string): Promise<{ user: Au
       prisma.user.update({ where: { id: record.id }, data: { failedLoginAttempts: 0, lockedUntil: null } }),
       issueTokenPair(record, roleName),
     ])
+    await recordLoginHistory(record.tenantId, record.id, true, options)
 
     return { user: toAuthUserDto(updatedUser, roleName), ...tokens }
   })
@@ -176,4 +228,68 @@ export async function getCurrentUser(userId: string): Promise<AuthUserDto> {
 
 export async function hashPassword(plainPassword: string): Promise<string> {
   return bcrypt.hash(plainPassword, SALT_ROUNDS)
+}
+
+// ---- MFA ----
+
+/** Generates a new secret + recovery codes, but doesn't enable MFA yet — enableMfa verifies a code first, standard "scan then confirm" flow. Re-running setup replaces any previous secret/codes. */
+export async function setupMfa(userId: string): Promise<{ secret: string; otpauthUri: string; recoveryCodes: string[] }> {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
+  const secret = generateTotpSecret()
+
+  await prisma.user.update({ where: { id: userId }, data: { mfaSecret: secret, mfaEnabled: false } })
+  await prisma.mfaRecoveryCode.deleteMany({ where: { userId } })
+
+  const recoveryCodes = Array.from({ length: RECOVERY_CODE_COUNT }, () => crypto.randomBytes(5).toString('hex'))
+  await prisma.mfaRecoveryCode.createMany({
+    data: recoveryCodes.map((code) => ({ tenantId: user.tenantId, userId, codeHash: hashRecoveryCode(code) })),
+  })
+
+  return { secret, otpauthUri: buildOtpauthUri(secret, user.email), recoveryCodes }
+}
+
+export async function enableMfa(userId: string, code: string): Promise<void> {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
+  if (!user.mfaSecret) {
+    throw ApiError.badRequest('Run MFA setup first.', { code: ['No pending setup'] })
+  }
+  if (!verifyTotp(user.mfaSecret, code)) {
+    throw ApiError.badRequest('Invalid code.', { code: ['Invalid'] })
+  }
+  await prisma.user.update({ where: { id: userId }, data: { mfaEnabled: true } })
+}
+
+export async function disableMfa(userId: string, code: string): Promise<void> {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
+  if (!user.mfaEnabled || !user.mfaSecret) {
+    throw ApiError.conflict('MFA is not enabled.', 'MFA_NOT_ENABLED')
+  }
+  if (!verifyTotp(user.mfaSecret, code)) {
+    throw ApiError.badRequest('Invalid code.', { code: ['Invalid'] })
+  }
+  await prisma.user.update({ where: { id: userId }, data: { mfaEnabled: false, mfaSecret: null } })
+  await prisma.mfaRecoveryCode.deleteMany({ where: { userId } })
+}
+
+// ---- Sessions & login history ----
+
+export async function listSessions(userId: string) {
+  return prisma.refreshToken.findMany({
+    where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, createdAt: true, expiresAt: true },
+  })
+}
+
+export async function revokeSession(userId: string, sessionId: string): Promise<void> {
+  const session = await prisma.refreshToken.findUnique({ where: { id: sessionId } })
+  if (!session || session.userId !== userId) {
+    throw ApiError.notFound('Session not found')
+  }
+  if (session.revokedAt) return
+  await prisma.refreshToken.update({ where: { id: sessionId }, data: { revokedAt: new Date() } })
+}
+
+export async function listLoginHistory(userId: string) {
+  return prisma.loginHistory.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, take: 50 })
 }
