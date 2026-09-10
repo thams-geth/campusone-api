@@ -11,6 +11,9 @@ const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(16, 'JWT_REFRESH_SECRET must be at least 16 characters'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('30d'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
+  // Backs the notification reminder job queue (BullMQ) — see
+  // src/queue. Defaults to the local docker-compose redis service.
+  REDIS_URL: z.string().default('redis://localhost:6379'),
 })
 
 const parsed = envSchema.safeParse(process.env)
