@@ -8,6 +8,7 @@ import { requestContext } from '../prisma/tenantContext'
 import { hashPassword } from '../modules/auth/auth.service'
 import { seedTenantRoles } from '../modules/rbac/rbac.seed'
 import type { SystemRoleName } from '../modules/rbac/permissions'
+import { seedPlanCatalogue } from '../modules/billing/billing.seed'
 
 /**
  * Runs a fixture-creation callback inside a bootstrap request context.
@@ -33,8 +34,11 @@ export async function createTestTenant(namePrefix: string) {
     data: { name: `${namePrefix} College`, slug: `${namePrefix.toLowerCase()}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` },
   })
   // Every tenant needs its system roles + default grants before any
-  // user can log in — see rbac.seed.ts.
+  // user can log in — see rbac.seed.ts. The plan catalogue is global
+  // reference data (see billing.seed.ts) but still needs SOME request
+  // context to write through the tenant-scoped client.
   await seedTenantRoles(tenant.id)
+  await withBootstrapContext(tenant.id, seedPlanCatalogue)
   return tenant
 }
 

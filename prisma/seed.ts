@@ -5,6 +5,7 @@ import { prisma } from '../src/prisma/client'
 import { requestContext } from '../src/prisma/tenantContext'
 import { hashPassword } from '../src/modules/auth/auth.service'
 import { seedGlobalRbac, seedTenantRoles } from '../src/modules/rbac/rbac.seed'
+import { seedPlanCatalogue } from '../src/modules/billing/billing.seed'
 
 // Dev convenience only — not run in CI or production. Bypasses the
 // tenant-scoped extended client for tenant/user lookups that must run
@@ -28,6 +29,7 @@ async function main() {
   // SOME request context to be set — the demo tenant's is as good as
   // any (see src/prisma/client.ts).
   await requestContext.run({ tenantId, userId: 'seed', role: 'SUPER_ADMIN' }, seedGlobalRbac)
+  await requestContext.run({ tenantId, userId: 'seed', role: 'SUPER_ADMIN' }, seedPlanCatalogue)
   await seedTenantRoles(tenantId)
 
   // A plain rawPrisma query can't see this row: User has RLS, and
