@@ -8,6 +8,37 @@ The backend for **CampusOne**, a multi-tenant SaaS college management platform. 
 
 **Product roadmap:** `CampusOne_Product_Ready_API_Roadmap.md` (this repo) is the source of truth for the full target product — entity models, release plan, and build order — and supersedes this file's sequencing where the two conflict. This backend now builds ahead of the frontend; endpoints are no longer gated on a matching frontend mock existing first (that was the rule through Milestone 1's predecessor, no longer current).
 
+## Docs are part of the change, not a follow-up
+
+Four places describe the API's surface, and they must stay in sync **within the same change**, not
+as a later pass:
+
+- `README.md` — the prose API reference (routes, request/response shapes, error codes, per-module notes)
+- `CLAUDE.md` (this file) — architecture rationale and the milestone log
+- `docs/openapi.yaml` — the Swagger spec served at `/api/docs`; every path/method must match the actual `*.routes.ts` registrations exactly (see the diff method used below)
+- `docs/handbook.html` — the standalone visual guide (architecture diagrams, role-by-role usage, core flows)
+
+**Whenever a route, permission, module, or role's grants change** (add, remove, rename, or reshape a
+request/response), update all four in the same pass — not just the code. A route that exists in
+`*.routes.ts` but not in `docs/openapi.yaml` is a real bug, not a documentation nicety: it already
+happened once (16 endpoints were missing — mostly get-by-id routes — caught by scripting a diff
+between the route files and the spec). Before considering an API change done:
+
+1. Update the relevant module section in `README.md`.
+2. Update `CLAUDE.md`'s milestone log if the change is new scope (a new module, a new cross-cutting
+   pattern) rather than a fix within existing scope.
+3. Update `docs/openapi.yaml` — same path, method, request/response shape as the code. If more than a
+   couple of routes changed, re-run the extraction-and-diff approach (grep every `*.routes.ts` for its
+   `.get/.post/.put/.patch/.delete(...)` calls, normalize `:param` → `{param}`, and diff the resulting
+   set against `yaml.parse(docs/openapi.yaml).paths`) rather than eyeballing it — that's what caught
+   the 16 missing routes and it's cheap to re-run.
+4. Update `docs/handbook.html` if the change affects architecture, a documented flow (the numbered
+   figures), the role table, or the module reference table — not needed for a docs-invisible internal
+   refactor.
+5. Verify `docs/openapi.yaml` still parses (`YAML.parse` via the `yaml` package) and, if
+   `docs/handbook.html` changed, sanity-check it renders — a quick headless-Chrome screenshot (see the
+   pattern used to build it) beats shipping a silently broken figure.
+
 ## Tech stack (decided)
 
 - **Backend:** Express 5 + TypeScript
