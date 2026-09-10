@@ -285,8 +285,8 @@ export async function getSemesterResult(callerUserId: string, explicitStudentId:
   return { studentId, semesterNumber, subjects: rows, sgpa: Math.round(sgpa * 100) / 100 }
 }
 
-export async function getCgpa(callerUserId: string, explicitStudentId: string | undefined) {
-  const studentId = await resolveOwnStudentId(callerUserId, explicitStudentId)
+/** Exported for other modules with their own eligibility checks (e.g. Placements' minCgpa filter) — no self-service resolution, just the number. */
+export async function getCgpaForStudent(studentId: string) {
   const subjects = await aggregatePublishedMarksBySubject(studentId)
 
   const totalCredits = subjects.reduce((sum, s) => sum + s.credits, 0)
@@ -297,4 +297,9 @@ export async function getCgpa(callerUserId: string, explicitStudentId: string | 
   const cgpa = totalCredits > 0 ? totalPoints / totalCredits : 0
 
   return { studentId, subjectsCounted: subjects.length, totalCredits, cgpa: Math.round(cgpa * 100) / 100 }
+}
+
+export async function getCgpa(callerUserId: string, explicitStudentId: string | undefined) {
+  const studentId = await resolveOwnStudentId(callerUserId, explicitStudentId)
+  return getCgpaForStudent(studentId)
 }
