@@ -1,5 +1,5 @@
 import { PrismaPg } from '@prisma/adapter-pg'
-import { DepartmentStatus, ModuleId, PrismaClient } from '@prisma/client'
+import { DepartmentStatus, ModuleId, PrismaClient, type Weekday } from '@prisma/client'
 import request from 'supertest'
 import type { Express } from 'express'
 import { env } from '../config/env'
@@ -263,6 +263,30 @@ export async function createTestStudentUser(
     })
     return { student, user }
   })
+}
+
+export async function createTestTimetableEntry(
+  tenantId: string,
+  sectionId: string,
+  subjectId: string,
+  facultyId: string,
+  roomId: string,
+  overrides: Partial<{ dayOfWeek: Weekday; startTime: string; endTime: string }> = {},
+) {
+  return withBootstrapContext(tenantId, async () =>
+    await prisma.timetableEntry.create({
+      data: {
+        tenantId,
+        sectionId,
+        subjectId,
+        facultyId,
+        roomId,
+        dayOfWeek: overrides.dayOfWeek ?? 'MONDAY',
+        startTime: overrides.startTime ?? '09:00',
+        endTime: overrides.endTime ?? '10:00',
+      },
+    }),
+  )
 }
 
 /** Every module besides CORE starts disabled — flip one on for a test tenant (see requireModule). */
