@@ -103,6 +103,41 @@ export const PERMISSIONS = {
   DOCUMENT_VERIFY: 'Verify or reject a document',
 
   REPORTS_READ: 'View reports',
+
+  ADMISSION_READ: 'View admission applications',
+  ADMISSION_CREATE: 'Create admission applications',
+  ADMISSION_UPDATE: 'Edit admission applications',
+  ADMISSION_DECIDE: 'Advance or reject an application through its lifecycle',
+  ADMISSION_ENROLL: 'Enroll an accepted applicant as a student',
+
+  FEE_READ: 'View fee structures and invoices',
+  FEE_MANAGE: 'Create fee structures, invoices, and adjustments',
+  PAYMENT_RECORD: 'Record a payment against an invoice',
+  PAYMENT_REFUND: 'Record a refund against a payment',
+
+  HOSTEL_READ: 'View hostels and rooms',
+  HOSTEL_MANAGE: 'Create and edit hostels and rooms',
+  HOSTEL_ALLOCATE: 'Allocate or vacate a student hostel room',
+
+  TRANSPORT_READ: 'View vehicles and routes',
+  TRANSPORT_MANAGE: 'Create and edit vehicles, routes, and stops',
+  TRANSPORT_ALLOCATE: 'Allocate or remove a student transport route',
+
+  LIBRARY_READ: 'View the book catalogue',
+  LIBRARY_MANAGE: 'Create and edit books',
+  LIBRARY_ISSUE: 'Issue or return a book',
+
+  CERTIFICATE_READ: 'View certificate types and requests',
+  CERTIFICATE_REQUEST: 'Request a certificate',
+  CERTIFICATE_ISSUE: 'Issue or reject a certificate request',
+
+  ACTIVITY_READ: 'View student activities',
+  ACTIVITY_MANAGE: 'Record an activity for any student',
+  ACTIVITY_SELF_REPORT: 'Record an activity for yourself',
+
+  PLACEMENT_READ: 'View companies, job openings, and applications',
+  PLACEMENT_MANAGE: 'Create companies, job openings, and manage applications',
+  PLACEMENT_APPLY: 'Apply to a job opening',
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS
@@ -192,6 +227,69 @@ const ACADEMIC_MANAGEMENT_READ: PermissionKey[] = [
   'DOCUMENT_READ',
 ]
 
+// Release 3 — College Operations. Same admin/read split as Release 2.
+// Admission decision authority (ADMISSION_DECIDE/_ENROLL) is deliberately
+// left out of the STAFF bundle below — everything else here is routine
+// front-desk/operations work (fee collection, hostel/transport
+// allocation, issuing books/certificates), but admitting someone is a
+// committee-level call, kept to DEPARTMENT_ADMIN/HOD/SUPER_ADMIN tier.
+const COLLEGE_OPERATIONS_ADMIN: PermissionKey[] = [
+  'ADMISSION_READ',
+  'ADMISSION_CREATE',
+  'ADMISSION_UPDATE',
+  'ADMISSION_DECIDE',
+  'ADMISSION_ENROLL',
+  'FEE_READ',
+  'FEE_MANAGE',
+  'PAYMENT_RECORD',
+  'PAYMENT_REFUND',
+  'HOSTEL_READ',
+  'HOSTEL_MANAGE',
+  'HOSTEL_ALLOCATE',
+  'TRANSPORT_READ',
+  'TRANSPORT_MANAGE',
+  'TRANSPORT_ALLOCATE',
+  'LIBRARY_READ',
+  'LIBRARY_MANAGE',
+  'LIBRARY_ISSUE',
+  'CERTIFICATE_READ',
+  'CERTIFICATE_ISSUE',
+  'ACTIVITY_READ',
+  'ACTIVITY_MANAGE',
+  'PLACEMENT_READ',
+  'PLACEMENT_MANAGE',
+]
+
+const COLLEGE_OPERATIONS_STAFF: PermissionKey[] = [
+  'ADMISSION_READ',
+  'ADMISSION_CREATE',
+  'FEE_READ',
+  'PAYMENT_RECORD',
+  'HOSTEL_READ',
+  'HOSTEL_MANAGE',
+  'HOSTEL_ALLOCATE',
+  'TRANSPORT_READ',
+  'TRANSPORT_MANAGE',
+  'TRANSPORT_ALLOCATE',
+  'LIBRARY_READ',
+  'LIBRARY_MANAGE',
+  'LIBRARY_ISSUE',
+  'CERTIFICATE_READ',
+  'CERTIFICATE_ISSUE',
+  'ACTIVITY_READ',
+  'PLACEMENT_READ',
+]
+
+const COLLEGE_OPERATIONS_READ: PermissionKey[] = [
+  'FEE_READ',
+  'HOSTEL_READ',
+  'TRANSPORT_READ',
+  'LIBRARY_READ',
+  'CERTIFICATE_READ',
+  'ACTIVITY_READ',
+  'PLACEMENT_READ',
+]
+
 const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as PermissionKey[]
 
 /** The 10 system roles every tenant gets seeded with — see rbac.seed.ts. */
@@ -240,6 +338,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     'INSTITUTION_READ',
     ...ADMIN_STRUCTURE,
     ...ACADEMIC_MANAGEMENT_ADMIN,
+    ...COLLEGE_OPERATIONS_ADMIN,
   ],
   HOD: [
     'DEPARTMENT_READ',
@@ -250,6 +349,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     'INSTITUTION_READ',
     ...ADMIN_STRUCTURE,
     ...ACADEMIC_MANAGEMENT_ADMIN,
+    ...COLLEGE_OPERATIONS_ADMIN,
   ],
   EXAM_ADMIN: [
     'STUDENT_READ',
@@ -277,6 +377,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     'ANNOUNCEMENT_MANAGE',
     'DOCUMENT_MANAGE',
     'DOCUMENT_VERIFY',
+    ...COLLEGE_OPERATIONS_READ,
+    'ACTIVITY_MANAGE',
   ],
   STAFF: [
     'STUDENT_READ',
@@ -285,6 +387,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     ...READ_ONLY_STRUCTURE,
     ...ACADEMIC_MANAGEMENT_READ,
     'DOCUMENT_MANAGE',
+    ...COLLEGE_OPERATIONS_STAFF,
   ],
   STUDENT: [
     'INSTITUTION_READ',
@@ -296,6 +399,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     'MARKS_READ',
     'ANNOUNCEMENT_READ',
     'DOCUMENT_READ',
+    ...COLLEGE_OPERATIONS_READ,
+    'CERTIFICATE_REQUEST',
+    'ACTIVITY_SELF_REPORT',
+    'PLACEMENT_APPLY',
   ],
   PARENT: [],
 }
