@@ -8,7 +8,7 @@ Backend API for **CampusOne**, a multi-tenant SaaS college management platform. 
 - Prisma + PostgreSQL
 - JWT access + refresh token auth, with a dynamic Role/Permission RBAC engine (not hardcoded roles)
 - Zod for request validation
-- Redis (via Docker Compose) reserved for future background jobs (BullMQ) — not wired up yet, no job queue exists until a module actually needs one
+- Redis (via Docker Compose) + BullMQ for the one background job that exists: the notification reminder scan (`src/queue`) — everything else is still synchronous, no queue added speculatively
 - Vitest + Supertest for tests
 
 ## Getting started
@@ -574,6 +574,39 @@ Permissions: `APPROVAL_READ` (also granted to `STAFF`), `APPROVAL_MANAGE` (`DEPA
 | `POST /` | `{ type, entity, entityId, reason? }` | `201`, `PENDING` — `type` is a free-form string a future module names |
 | `POST /:id/approve` \| `/reject` | `{ decisionNotes? }` | `200` — `409 ALREADY_DECIDED` if not `PENDING` |
 
+### Notifications (`/api/v1/notifications`) — module `CORE`
+
+Permission: `NOTIFICATION_READ` (granted broadly — every logged-in-capable role). Purely self-account-management: every route always operates on the caller's own notifications, there's no way to read or manage anyone else's. Roadmap §13's entities minus `NotificationTemplate` — deliberately not built, same "minimal, not the full model" call as the approval engine, since there's no library of reusable templates yet to justify one.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` | query: `page?, pageSize?, unreadOnly?` | `200` paginated `Notification[]` |
+| `GET /unread-count` | — | `200 { count }` |
+| `POST /:id/read` | — | `204` |
+| `POST /read-all` | — | `204` — marks every unread notification read |
+| `GET /preferences` | — | `200 [{ channel: "EMAIL"\|"SMS"\|"PUSH", enabled }]` — `IN_APP` isn't listed, it can't be disabled |
+| `PUT /preferences/:channel` | `{ enabled }` | `200 { channel, enabled }` — `400` for `channel: IN_APP` |
+
+**How delivery actually works:** `IN_APP` is always real — creating the `Notification` row *is* the delivery, immediately visible via `GET /`. `EMAIL`/`SMS`/`PUSH` only get attempted (and logged) if the tenant has the mapped `IntegrationConfig` enabled (`EMAIL`→`EMAIL`, `SMS`→`SMS`, `PUSH`→`FIREBASE` — see Integrations above) **and** the user hasn't opted out; even then, the resulting `NotificationDelivery` row is recorded `FAILED` with a clear reason, since no live provider call exists anywhere in this codebase — same "config exists, sending is future work" boundary as Integrations itself.
+
+**What triggers a notification today:**
+- Publishing an announcement (`POST /announcements`, when `publishAt` is now or in the past) — fans out to the resolved audience, type `ANNOUNCEMENT_PUBLISHED`. A future-dated `publishAt` does **not** get a catch-up notification when it actually goes live — there's no separate "just published" scheduler, only the reminder scan below.
+- A class group message (see Class Groups below) — type `CLASS_GROUP_MESSAGE`.
+- The periodic announcement-expiry reminder scan — type `ANNOUNCEMENT_REMINDER`.
+
+**Announcement expiry reminders (background job):** the roadmap's own stated reason for a job queue ("use background jobs instead of doing every notification synchronously") — the first real BullMQ usage in this codebase (`src/queue/`). A repeatable job runs every 15 minutes, scanning every tenant for announcements whose `expiryAt` falls within the next 24h and that haven't been reminded about yet (`Announcement.reminderSentAt`); each match gets a reminder notification to its original audience and `reminderSentAt` set so it's never re-sent. The worker runs in-process alongside the API server (`server.ts`) — not a separate deployment at this scale. Immediate fan-out (announcement publish, class group messages) stays synchronous in the request path, same as Webhooks' inline fetch; only this recurring scan goes through the queue.
+
+### Class Groups (`/api/v1/class-groups`) — module `CORE`
+
+Permissions: `CLASS_GROUP_READ`/`CLASS_GROUP_POST` (STUDENT/FACULTY — membership-gated, see below), `CLASS_GROUP_MANAGE` (DEPARTMENT_ADMIN/HOD and up — bypasses membership, any section). Not in the roadmap — a Section already *is* the class, so there's no separate `ClassGroup` entity, just messages scoped by `sectionId`; membership is derived on read from existing relations (`Student.sectionId`, `TimetableEntry.facultyId` for that section), not a stored membership list.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /:sectionId/messages` | query: `page?, pageSize?` | `200` paginated `ClassGroupMessage[]` (with `author: { id, name }`) |
+| `POST /:sectionId/messages` | `{ body }` | `201` — fans out an in-app `CLASS_GROUP_MESSAGE` notification to every other member (active students in the section + faculty who teach it, via Timetable) |
+
+`404` for an unknown section. `403` if the caller is neither a member (a student in that section, or a faculty member with a `TimetableEntry` there) nor holds `CLASS_GROUP_MANAGE`.
+
 ---
 
 If Postgres was already running from before `docker/init-app-role.sql` existed, that init script won't retroactively run on the existing volume — apply it by hand once:
@@ -609,12 +642,13 @@ src/
 │                 # examinations, announcements, documents, reports, import-export,
 │                 # admissions, fees, hostel, transport, library, certificates,
 │                 # activities, placements, billing, api-keys, webhooks, integrations,
-│                 # approvals,
+│                 # approvals, notifications, class-groups,
 │                 # shared (audit-log writer + own-student/own-faculty resolvers)
 ├── prisma/       # Prisma client + extension, tenant context (AsyncLocalStorage)
+├── queue/        # BullMQ connection, notification reminder queue + worker
 ├── utils/        # ApiError and other shared helpers
 ├── app.ts        # Express app wiring (middleware, /api/v1 routes)
-└── server.ts     # process entry point
+└── server.ts     # process entry point — also starts the notification worker + schedules its repeatable job
 prisma/
 ├── schema.prisma
 ├── migrations/

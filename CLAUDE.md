@@ -14,7 +14,7 @@ The backend for **CampusOne**, a multi-tenant SaaS college management platform. 
 - **ORM/DB:** Prisma + PostgreSQL
 - **Auth:** JWT access token + opaque refresh token (httpOnly cookie)
 - **Validation:** Zod
-- **Background jobs:** BullMQ/Redis (Redis runs via docker-compose already; no queue/processor exists until a module actually needs one — don't add one speculatively)
+- **Background jobs:** BullMQ/Redis — one real queue exists (`src/queue/`), the notification reminder scan; don't add another speculatively, only when a module actually needs one
 - **Payments (later):** Razorpay or Cashfree (native UPI — non-negotiable for India)
 - **Notifications (later):** WhatsApp Business API + SMS/email fallback (e.g. Gupshup)
 
@@ -74,6 +74,8 @@ Milestone 4 ("Enterprise SaaS" — roadmap's Release 4) is also built, with the 
 - `HR_PAYROLL`, `COMPLIANCE_REPORTING`, and `INVENTORY_PROCUREMENT` remain unused — genuinely out of scope for the current roadmap, not deferred-with-intent like the items above.
 
 All four roadmap releases are now built. Anything beyond this point is new scope, not a continuation of a planned milestone — see the roadmap doc's own "beyond Release 4" notes if any exist before assuming there's a fifth one.
+
+**Post-Release-4: Notifications + Class Groups** (user request, not a roadmap milestone). Notifications follow the roadmap's §13 model (`Notification`/`NotificationDelivery`/`NotificationPreference`, channels `IN_APP`/`EMAIL`/`SMS`/`PUSH`) minus `NotificationTemplate` — deliberately skipped, same "minimal, not the full model" call as the approval engine, since there's no template library yet to justify one. `IN_APP` is fully real; `EMAIL`/`SMS`/`PUSH` are config-gated through the existing `IntegrationConfig` (Milestone 4) but never actually send — a `NotificationDelivery` row records the attempt as `FAILED` with a reason, so nothing pretends to succeed. This is also the first real use of BullMQ (`src/queue/`) — the roadmap explicitly calls out background jobs for notifications, and the recurring announcement-expiry-reminder scan is exactly that kind of work; immediate fan-out (announcement publish, class group messages) still happens synchronously in the request, same as Webhooks' inline fetch. Class Groups (`src/modules/class-groups/`) aren't in the roadmap at all — a `Section` already *is* "the class," so there's no separate `ClassGroup` entity, just `ClassGroupMessage` rows scoped by `sectionId`; membership (who can read/post without `CLASS_GROUP_MANAGE`) is derived on read from `Student.sectionId` and `TimetableEntry.facultyId`, not a stored membership list. See `src/modules/notifications/` and `src/modules/class-groups/` plus the README's API reference for both.
 
 ## Matching the frontend's mock contract
 
