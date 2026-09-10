@@ -32,6 +32,14 @@ import { announcementsRouter } from './modules/announcements/announcement.routes
 import { documentsRouter } from './modules/documents/document.routes'
 import { reportsRouter } from './modules/reports/report.routes'
 import { importExportRouter } from './modules/import-export/importExport.routes'
+import { admissionsRouter } from './modules/admissions/admission.routes'
+import { feesRouter } from './modules/fees/fee.routes'
+import { hostelRouter } from './modules/hostel/hostel.routes'
+import { transportRouter } from './modules/transport/transport.routes'
+import { libraryRouter } from './modules/library/library.routes'
+import { certificatesRouter } from './modules/certificates/certificate.routes'
+import { activitiesRouter } from './modules/activities/activity.routes'
+import { placementsRouter } from './modules/placements/placement.routes'
 
 export function createApp() {
   const app = express()
@@ -104,6 +112,14 @@ export function createApp() {
   v1.use('/documents', documentsRouter)
   v1.use('/reports', reportsRouter)
   v1.use('/import-export', importExportRouter)
+  v1.use('/admissions', admissionsRouter)
+  v1.use('/fees', feesRouter)
+  v1.use('/hostel', hostelRouter)
+  v1.use('/transport', transportRouter)
+  v1.use('/library', libraryRouter)
+  v1.use('/certificates', certificatesRouter)
+  v1.use('/activities', activitiesRouter)
+  v1.use('/placements', placementsRouter)
   // Roles/permissions admin surface — its own routes (/roles,
   // /permissions, /users/:id/role) rather than one resource prefix.
   v1.use(rbacRouter)
