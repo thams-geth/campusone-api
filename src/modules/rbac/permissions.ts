@@ -138,6 +138,25 @@ export const PERMISSIONS = {
   PLACEMENT_READ: 'View companies, job openings, and applications',
   PLACEMENT_MANAGE: 'Create companies, job openings, and manage applications',
   PLACEMENT_APPLY: 'Apply to a job opening',
+
+  BILLING_READ: "View the tenant's subscription, plan, and invoices",
+  BILLING_MANAGE: 'Change plan and record billing payments',
+
+  API_KEY_READ: 'View API keys',
+  API_KEY_MANAGE: 'Create and revoke API keys',
+
+  WEBHOOK_READ: 'View webhook endpoints and delivery history',
+  WEBHOOK_MANAGE: 'Create, edit, and delete webhook endpoints',
+
+  INTEGRATION_READ: 'View integration configuration',
+  INTEGRATION_MANAGE: 'Enable, configure, and disable integrations',
+
+  APPROVAL_READ: 'View approval requests',
+  APPROVAL_MANAGE: 'Decide (approve/reject) an approval request',
+
+  // MFA setup, sessions, and login history are self-account-management
+  // — available to any authenticated user regardless of role, same as
+  // /auth/me. No permission key needed for them.
 } as const
 
 export type PermissionKey = keyof typeof PERMISSIONS
@@ -290,6 +309,15 @@ const COLLEGE_OPERATIONS_READ: PermissionKey[] = [
   'PLACEMENT_READ',
 ]
 
+// Release 4 — Enterprise SaaS. Billing/API keys/webhooks/integrations
+// are college-wide platform concerns, deliberately kept to
+// SUPER_ADMIN/COLLEGE_ADMIN tier (covered by ALL_PERMISSIONS) rather
+// than extended to DEPARTMENT_ADMIN/HOD/STAFF the way College
+// Operations was — a department admin managing the college's billing
+// subscription or minting API keys isn't the right default. The
+// generic approval engine is the one piece with broader relevance.
+const APPROVAL_ADMIN: PermissionKey[] = ['APPROVAL_READ', 'APPROVAL_MANAGE']
+
 const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as PermissionKey[]
 
 /** The 10 system roles every tenant gets seeded with — see rbac.seed.ts. */
@@ -339,6 +367,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     ...ADMIN_STRUCTURE,
     ...ACADEMIC_MANAGEMENT_ADMIN,
     ...COLLEGE_OPERATIONS_ADMIN,
+    ...APPROVAL_ADMIN,
   ],
   HOD: [
     'DEPARTMENT_READ',
@@ -350,6 +379,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     ...ADMIN_STRUCTURE,
     ...ACADEMIC_MANAGEMENT_ADMIN,
     ...COLLEGE_OPERATIONS_ADMIN,
+    ...APPROVAL_ADMIN,
   ],
   EXAM_ADMIN: [
     'STUDENT_READ',
@@ -388,6 +418,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     ...ACADEMIC_MANAGEMENT_READ,
     'DOCUMENT_MANAGE',
     ...COLLEGE_OPERATIONS_STAFF,
+    'APPROVAL_READ',
   ],
   STUDENT: [
     'INSTITUTION_READ',
