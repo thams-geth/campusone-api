@@ -175,6 +175,7 @@ enum AnnouncementPriority {
 enum DocumentOwnerType {
   STUDENT
   FACULTY
+  APPLICANT
 }
 
 enum DocumentType {
@@ -228,6 +229,26 @@ model Tenant {
   marks                 Marks[]
   announcements         Announcement[]
   documents             Document[]
+  admissionApplications AdmissionApplication[]
+  feeStructures         FeeStructure[]
+  feeInvoices           FeeInvoice[]
+  feeAdjustments        FeeAdjustment[]
+  payments              Payment[]
+  hostels               Hostel[]
+  hostelRooms           HostelRoom[]
+  hostelAllocations     HostelAllocation[]
+  vehicles              Vehicle[]
+  routes                Route[]
+  stops                 Stop[]
+  studentTransports     StudentTransport[]
+  books                 Book[]
+  bookIssues            BookIssue[]
+  certificateTypes      CertificateType[]
+  certificateRequests   CertificateRequest[]
+  studentActivities     StudentActivity[]
+  companies             Company[]
+  jobOpenings           JobOpening[]
+  placementApplications PlacementApplication[]
 }
 
 // tenant_modules: which modules a tenant has installed/enabled, and at
@@ -341,6 +362,10 @@ model User {
   announcementsAuthored          Announcement[]         @relation("AnnouncementAuthor")
   documentsUploaded              Document[]             @relation("DocumentUploadedBy")
   documentsVerified              Document[]             @relation("DocumentVerifiedBy")
+  admissionsReviewed             AdmissionApplication[] @relation("AdmissionReviewedBy")
+  feeAdjustmentsCreated          FeeAdjustment[]        @relation("FeeAdjustmentCreatedBy")
+  paymentsRecorded               Payment[]              @relation("PaymentRecordedBy")
+  certificatesIssued             CertificateRequest[]   @relation("CertificateIssuedBy")
 
   @@index([tenantId])
 }
@@ -400,8 +425,9 @@ model AcademicYear {
   createdAt DateTime           @default(now())
   updatedAt DateTime           @updatedAt
 
-  batches Batch[]
-  exams   Exam[]
+  batches       Batch[]
+  exams         Exam[]
+  feeStructures FeeStructure[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -420,8 +446,10 @@ model Program {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  batches  Batch[]
-  subjects Subject[]
+  batches               Batch[]
+  subjects              Subject[]
+  admissionApplications AdmissionApplication[]
+  feeStructures         FeeStructure[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -579,39 +607,50 @@ model TimetableEntry {
 }
 
 model Student {
-  id              String        @id @default(cuid())
-  tenantId        String
-  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  firstName       String
-  lastName        String
-  email           String
-  phone           String
-  rollNumber      String
-  departmentId    String
-  department      Department    @relation(fields: [departmentId], references: [id])
-  sectionId       String?
-  section         Section?      @relation(fields: [sectionId], references: [id])
-  currentSemester Int?
+  id                     String                @id @default(cuid())
+  tenantId               String
+  tenant                 Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  firstName              String
+  lastName               String
+  email                  String
+  phone                  String
+  rollNumber             String
+  departmentId           String
+  department             Department            @relation(fields: [departmentId], references: [id])
+  sectionId              String?
+  section                Section?              @relation(fields: [sectionId], references: [id])
+  currentSemester        Int?
   // Nullable, unlike Faculty's required userId: a Student row predates
   // any login account (created by admin data entry) and self-service
   // (leave requests, assignment submissions, viewing own marks) only
   // becomes possible once one is linked. No backfill for existing rows.
-  userId          String?       @unique
-  user            User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  gender          Gender
-  dateOfBirth     DateTime
-  admissionDate   DateTime
-  status          StudentStatus @default(ACTIVE)
-  guardianName    String?
-  guardianPhone   String?
-  address         String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  userId                 String?               @unique
+  user                   User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  // Set only when this Student was created by enrolling an
+  // AdmissionApplication (see admissions.service.ts) — most students
+  // are still created directly by admin data entry and have none.
+  admissionApplicationId String?               @unique
+  admissionApplication   AdmissionApplication? @relation(fields: [admissionApplicationId], references: [id])
+  gender                 Gender
+  dateOfBirth            DateTime
+  admissionDate          DateTime
+  status                 StudentStatus         @default(ACTIVE)
+  guardianName           String?
+  guardianPhone          String?
+  address                String?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
 
   attendanceRecords     AttendanceRecord[]
   leaveRequests         LeaveRequest[]
   assignmentSubmissions AssignmentSubmission[]
   marks                 Marks[]
+  feeInvoices           FeeInvoice[]
+  hostelAllocations     HostelAllocation[]
+  studentTransports     StudentTransport[]
+  certificateRequests   CertificateRequest[]
+  studentActivities     StudentActivity[]
+  placementApplications PlacementApplication[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, rollNumber])
@@ -935,4 +974,494 @@ model Document {
 
   @@index([tenantId])
   @@index([tenantId, ownerType, ownerId])
+}
+
+// ---- Milestone 3: College Operations (roadmap Release 3) ----
+
+enum AdmissionStatus {
+  APPLIED
+  DOCUMENT_VERIFICATION
+  SHORTLISTED
+  APPROVED
+  OFFERED
+  ACCEPTED
+  ENROLLED
+  REJECTED
+  WITHDRAWN
+}
+
+enum FeeCategory {
+  TUITION
+  HOSTEL
+  TRANSPORT
+  EXAM
+  LIBRARY
+  LAB
+  OTHER
+}
+
+enum FeeInvoiceStatus {
+  PENDING
+  PARTIAL
+  PAID
+  OVERDUE
+  WAIVED
+}
+
+enum FeeAdjustmentType {
+  DISCOUNT
+  SCHOLARSHIP
+  FINE
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CARD
+  UPI
+  CHEQUE
+  OTHER
+}
+
+enum AllocationStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PersonType {
+  STUDENT
+  FACULTY
+}
+
+enum CertificateRequestStatus {
+  REQUESTED
+  ISSUED
+  REJECTED
+}
+
+enum ActivityType {
+  ACHIEVEMENT
+  EVENT
+  CLUB
+  SPORTS
+  COMPETITION
+  INTERNSHIP
+  OTHER
+}
+
+enum PlacementApplicationStatus {
+  APPLIED
+  SHORTLISTED
+  INTERVIEW
+  SELECTED
+  REJECTED
+}
+
+// Applicant fields live directly on the application — nothing about an
+// applicant exists before they apply, so no separate Applicant entity
+// (unlike Student, which persists independently of how it was
+// created). Enrolling creates the real Student row via the existing
+// createStudent path and links back via Student.admissionApplicationId.
+model AdmissionApplication {
+  id               String          @id @default(cuid())
+  tenantId         String
+  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  firstName        String
+  lastName         String
+  email            String
+  phone            String
+  dateOfBirth      DateTime
+  programId        String
+  program          Program         @relation(fields: [programId], references: [id])
+  status           AdmissionStatus @default(APPLIED)
+  reviewedByUserId String?
+  reviewedBy       User?           @relation("AdmissionReviewedBy", fields: [reviewedByUserId], references: [id])
+  reviewNotes      String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  student Student?
+
+  @@unique([tenantId, email, programId])
+  @@index([tenantId])
+  @@index([programId])
+}
+
+// Fees & Finance (roadmap #11) — an internal ledger, not a live payment
+// gateway (Razorpay/Cashfree need real credentials this environment
+// doesn't have; wiring one is a later, focused pass). Invoice status is
+// recomputed from payments/adjustments on every write, never trusted
+// as stored truth on its own — same "don't maintain a second source of
+// truth" reasoning as Examinations' SGPA/CGPA.
+model FeeStructure {
+  id             String       @id @default(cuid())
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  programId      String
+  program        Program      @relation(fields: [programId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  category       FeeCategory
+  amount         Int
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  invoices FeeInvoice[]
+
+  @@unique([tenantId, programId, academicYearId, category])
+  @@index([tenantId])
+  @@index([programId])
+}
+
+model FeeInvoice {
+  id             String           @id @default(cuid())
+  tenantId       String
+  tenant         Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student          @relation(fields: [studentId], references: [id])
+  feeStructureId String?
+  feeStructure   FeeStructure?    @relation(fields: [feeStructureId], references: [id])
+  category       FeeCategory
+  amount         Int
+  dueDate        DateTime
+  status         FeeInvoiceStatus @default(PENDING)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  adjustments FeeAdjustment[]
+  payments    Payment[]
+
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+model FeeAdjustment {
+  id              String            @id @default(cuid())
+  tenantId        String
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoiceId       String
+  invoice         FeeInvoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  type            FeeAdjustmentType
+  amount          Int
+  reason          String
+  createdByUserId String
+  createdBy       User              @relation("FeeAdjustmentCreatedBy", fields: [createdByUserId], references: [id])
+  createdAt       DateTime          @default(now())
+
+  @@index([tenantId])
+  @@index([invoiceId])
+}
+
+// isRefund + a self-relation instead of a separate Refund table — a
+// refund IS a payment, just negative-direction and tied back to the
+// original.
+model Payment {
+  id                String        @id @default(cuid())
+  tenantId          String
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoiceId         String
+  invoice           FeeInvoice    @relation(fields: [invoiceId], references: [id])
+  amount            Int
+  method            PaymentMethod
+  isRefund          Boolean       @default(false)
+  originalPaymentId String?
+  originalPayment   Payment?      @relation("PaymentRefund", fields: [originalPaymentId], references: [id])
+  refunds           Payment[]     @relation("PaymentRefund")
+  transactionRef    String?
+  recordedByUserId  String
+  recordedBy        User          @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id])
+  createdAt         DateTime      @default(now())
+
+  @@index([tenantId])
+  @@index([invoiceId])
+}
+
+// Hostel (roadmap #19) — deliberately flat, no Building/Floor (same
+// simplification as the academic Room model), no separate Bed table
+// (bedNumber is a plain field, capacity checked in the service layer).
+model Hostel {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rooms HostelRoom[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model HostelRoom {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  hostelId   String
+  hostel     Hostel   @relation(fields: [hostelId], references: [id])
+  roomNumber String
+  capacity   Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  allocations HostelAllocation[]
+
+  @@unique([tenantId, hostelId, roomNumber])
+  @@index([tenantId])
+  @@index([hostelId])
+}
+
+model HostelAllocation {
+  id           String           @id @default(cuid())
+  tenantId     String
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student          @relation(fields: [studentId], references: [id])
+  hostelRoomId String
+  hostelRoom   HostelRoom       @relation(fields: [hostelRoomId], references: [id])
+  bedNumber    Int
+  status       AllocationStatus @default(ACTIVE)
+  startDate    DateTime
+  endDate      DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([hostelRoomId])
+}
+
+// Transport (roadmap #20) — driver name/phone are plain fields on
+// Vehicle rather than a separate Driver entity; no Trip/FacultyTransport.
+model Vehicle {
+  id                 String   @id @default(cuid())
+  tenantId           String
+  tenant             Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  registrationNumber String
+  driverName         String
+  driverPhone        String
+  capacity           Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  routes Route[]
+
+  @@unique([tenantId, registrationNumber])
+  @@index([tenantId])
+}
+
+model Route {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  vehicleId String?
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stops       Stop[]
+  allocations StudentTransport[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Stop {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  routeId   String
+  route     Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  name      String
+  sequence  Int
+  createdAt DateTime @default(now())
+
+  allocations StudentTransport[]
+
+  @@unique([tenantId, routeId, sequence])
+  @@index([tenantId])
+  @@index([routeId])
+}
+
+model StudentTransport {
+  id        String           @id @default(cuid())
+  tenantId  String
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student          @relation(fields: [studentId], references: [id])
+  routeId   String
+  route     Route            @relation(fields: [routeId], references: [id])
+  stopId    String
+  stop      Stop             @relation(fields: [stopId], references: [id])
+  status    AllocationStatus @default(ACTIVE)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+// Library (roadmap #21) — author/publisher/category as plain fields
+// (no separate normalized entities), availableCopies tracked directly
+// on Book instead of per-copy rows. BookIssue's status (issued/
+// returned/overdue) is derived from returnedAt/dueDate on read, not
+// stored — one less place for it to drift.
+model Book {
+  id              String   @id @default(cuid())
+  tenantId        String
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title           String
+  author          String
+  publisher       String?
+  category        String?
+  isbn            String?
+  totalCopies     Int
+  availableCopies Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  issues BookIssue[]
+
+  @@index([tenantId])
+}
+
+model BookIssue {
+  id         String     @id @default(cuid())
+  tenantId   String
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  bookId     String
+  book       Book       @relation(fields: [bookId], references: [id])
+  ownerType  PersonType
+  ownerId    String
+  issuedAt   DateTime   @default(now())
+  dueDate    DateTime
+  returnedAt DateTime?
+  fineAmount Int?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([tenantId])
+  @@index([bookId])
+  @@index([ownerType, ownerId])
+}
+
+// Certificates (roadmap #22) — the *issuance* workflow, distinct from
+// Documents (arbitrary uploaded files). verificationCode stands in for
+// "digital signature/QR": an actual QR is just that code rendered
+// client-side, no PDF/QR generation library added here.
+model CertificateType {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  category  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  requests CertificateRequest[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model CertificateRequest {
+  id                String                   @id @default(cuid())
+  tenantId          String
+  tenant            Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId         String
+  student           Student                  @relation(fields: [studentId], references: [id])
+  certificateTypeId String
+  certificateType   CertificateType          @relation(fields: [certificateTypeId], references: [id])
+  status            CertificateRequestStatus @default(REQUESTED)
+  issuedByUserId    String?
+  issuedBy          User?                    @relation("CertificateIssuedBy", fields: [issuedByUserId], references: [id])
+  issuedAt          DateTime?
+  verificationCode  String?                  @unique
+  rejectionReason   String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+// Student Activities (roadmap #17) — one lightweight record type
+// covering achievements/events/clubs/sports/competitions/internships,
+// self-reportable by the student or recorded by staff.
+model StudentActivity {
+  id             String       @id @default(cuid())
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student      @relation(fields: [studentId], references: [id])
+  type           ActivityType
+  title          String
+  description    String?
+  date           DateTime
+  certificateUrl String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+// Placements (roadmap #18) — no separate Interview/PlacementResult
+// entities; both fold into the application's status progression and
+// fields, same reasoning as Assignments not needing a separate
+// grading-workflow entity. Eligibility is a simple minCgpa filter, not
+// a formal EligibilityCriteria entity.
+model Company {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  website   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobOpenings JobOpening[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model JobOpening {
+  id                  String    @id @default(cuid())
+  tenantId            String
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  companyId           String
+  company             Company   @relation(fields: [companyId], references: [id])
+  title               String
+  description         String?
+  minCgpa             Float?
+  ctcOffered          Int?
+  applicationDeadline DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  applications PlacementApplication[]
+
+  @@index([tenantId])
+  @@index([companyId])
+}
+
+model PlacementApplication {
+  id           String                     @id @default(cuid())
+  tenantId     String
+  tenant       Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student                    @relation(fields: [studentId], references: [id])
+  jobOpeningId String
+  jobOpening   JobOpening                 @relation(fields: [jobOpeningId], references: [id])
+  status       PlacementApplicationStatus @default(APPLIED)
+  notes        String?
+  offeredCtc   Int?
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+
+  @@unique([studentId, jobOpeningId])
+  @@index([tenantId])
+  @@index([jobOpeningId])
 }
