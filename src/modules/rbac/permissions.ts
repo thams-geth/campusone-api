@@ -154,6 +154,12 @@ export const PERMISSIONS = {
   APPROVAL_READ: 'View approval requests',
   APPROVAL_MANAGE: 'Decide (approve/reject) an approval request',
 
+  NOTIFICATION_READ: 'View and manage your own notifications',
+
+  CLASS_GROUP_READ: "View a class group's messages",
+  CLASS_GROUP_POST: 'Post a message to a class group',
+  CLASS_GROUP_MANAGE: 'View and post to any class group, regardless of membership',
+
   // MFA setup, sessions, and login history are self-account-management
   // — available to any authenticated user regardless of role, same as
   // /auth/me. No permission key needed for them.
@@ -318,6 +324,19 @@ const COLLEGE_OPERATIONS_READ: PermissionKey[] = [
 // generic approval engine is the one piece with broader relevance.
 const APPROVAL_ADMIN: PermissionKey[] = ['APPROVAL_READ', 'APPROVAL_MANAGE']
 
+// Notifications (roadmap #13) + class groups (not in the roadmap — a
+// section is already a "class," so a class group is just its message
+// board). NOTIFICATION_READ is granted to every logged-in-capable role
+// below since it's purely "your own inbox," same spirit as MFA/sessions
+// being permission-free, but kept a real key for consistency with the
+// rest of the catalogue. Class groups are membership-gated in the
+// service layer (see classGroup.service.ts) — CLASS_GROUP_MEMBER lets a
+// student/faculty read/post only in sections they actually belong to;
+// CLASS_GROUP_MANAGE bypasses that for admin tiers.
+const NOTIFICATION_SELF: PermissionKey[] = ['NOTIFICATION_READ']
+const CLASS_GROUP_MEMBER: PermissionKey[] = ['CLASS_GROUP_READ', 'CLASS_GROUP_POST']
+const CLASS_GROUP_ADMIN: PermissionKey[] = ['CLASS_GROUP_READ', 'CLASS_GROUP_POST', 'CLASS_GROUP_MANAGE']
+
 const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as PermissionKey[]
 
 /** The 10 system roles every tenant gets seeded with — see rbac.seed.ts. */
@@ -368,6 +387,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     ...ACADEMIC_MANAGEMENT_ADMIN,
     ...COLLEGE_OPERATIONS_ADMIN,
     ...APPROVAL_ADMIN,
+    ...NOTIFICATION_SELF,
+    ...CLASS_GROUP_ADMIN,
   ],
   HOD: [
     'DEPARTMENT_READ',
@@ -380,6 +401,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     ...ACADEMIC_MANAGEMENT_ADMIN,
     ...COLLEGE_OPERATIONS_ADMIN,
     ...APPROVAL_ADMIN,
+    ...NOTIFICATION_SELF,
+    ...CLASS_GROUP_ADMIN,
   ],
   EXAM_ADMIN: [
     'STUDENT_READ',
@@ -391,6 +414,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     'MARKS_PUBLISH',
     'MARKS_REVISE',
     'REPORTS_READ',
+    ...NOTIFICATION_SELF,
   ],
   FACULTY: [
     'STUDENT_READ',
@@ -409,6 +433,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     'DOCUMENT_VERIFY',
     ...COLLEGE_OPERATIONS_READ,
     'ACTIVITY_MANAGE',
+    ...NOTIFICATION_SELF,
+    ...CLASS_GROUP_MEMBER,
   ],
   STAFF: [
     'STUDENT_READ',
@@ -419,6 +445,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     'DOCUMENT_MANAGE',
     ...COLLEGE_OPERATIONS_STAFF,
     'APPROVAL_READ',
+    ...NOTIFICATION_SELF,
   ],
   STUDENT: [
     'INSTITUTION_READ',
@@ -434,6 +461,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<SystemRoleName, PermissionKey[]> =
     'CERTIFICATE_REQUEST',
     'ACTIVITY_SELF_REPORT',
     'PLACEMENT_APPLY',
+    ...NOTIFICATION_SELF,
+    ...CLASS_GROUP_MEMBER,
   ],
   PARENT: [],
 }
