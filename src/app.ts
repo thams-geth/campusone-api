@@ -1,9 +1,13 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import express from 'express'
 import helmet from 'helmet'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import { pinoHttp } from 'pino-http'
 import rateLimit from 'express-rate-limit'
+import swaggerUi from 'swagger-ui-express'
+import YAML from 'yaml'
 import { env } from './config/env'
 import { logger } from './config/logger'
 import { errorHandler, notFoundHandler } from './middleware/errorHandler'
@@ -48,6 +52,10 @@ import { approvalsRouter } from './modules/approvals/approval.routes'
 import { notificationsRouter } from './modules/notifications/notification.routes'
 import { classGroupsRouter } from './modules/class-groups/classGroup.routes'
 
+// Loaded once at module scope, not per-request — the spec is static
+// repo content, not something that changes at runtime.
+const openApiDocument = YAML.parse(fs.readFileSync(path.join(__dirname, '../docs/openapi.yaml'), 'utf8')) as object
+
 export function createApp() {
   const app = express()
 
@@ -77,6 +85,13 @@ export function createApp() {
       legacyHeaders: false,
     }),
   )
+
+  // Interactive API reference — unversioned, like health checks.
+  // /api/docs.json exposes the raw spec (e.g. for Postman import).
+  app.get('/api/docs.json', (_req, res) => {
+    res.json(openApiDocument)
+  })
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiDocument, { customSiteTitle: 'CampusOne API Docs' }))
 
   // Health checks stay unversioned and outside /api/v1 — infra (load
   // balancers, k8s probes) shouldn't need updating when the API

@@ -1,0 +1,2075 @@
+openapi: 3.0.3
+info:
+  title: CampusOne API
+  version: "1.0"
+  description: |
+    Backend API for **CampusOne**, a multi-tenant SaaS college management platform.
+    Any college signs up as a **tenant**; every table carries a `tenantId` and is
+    isolated with Postgres Row-Level Security. Features are enabled per tenant like
+    installable **modules** (`CORE` is always on).
+
+    ## Conventions
+    - All routes except `/health*`, `POST /api/v1/auth/login`, and
+      `POST /api/v1/auth/refresh` require `Authorization: Bearer <accessToken>`
+      (or an `X-API-Key` header — see Auth / API Keys).
+    - Every route also requires the tenant to have the owning module enabled
+      (`403` if not) and the caller's role to hold the specific permission the
+      route declares (see each tag's description).
+    - List endpoints return the paginated envelope `{ data, meta }` — see
+      `PaginatedMeta` below.
+    - Any non-2xx response is `{ message, code, details? }` — see `ErrorResponse`.
+      A `422` with `code: VALIDATION_ERROR` means Zod rejected the request body;
+      `details` is a `{ field: [messages] }` map.
+  contact:
+    name: CampusOne API source
+    url: https://github.com/
+
+servers:
+  - url: http://localhost:4000
+    description: Local dev server
+
+tags:
+  - name: Health
+    description: Unversioned liveness/readiness checks.
+  - name: Auth
+    description: Login, refresh, logout, MFA (TOTP), sessions, login history. No module gate.
+  - name: Departments
+    description: "Module: CORE. Permissions DEPARTMENT_READ/_CREATE/_UPDATE/_DELETE."
+  - name: Students
+    description: "Module: CORE. Permissions STUDENT_READ/_CREATE/_UPDATE/_DELETE."
+  - name: Dashboard
+    description: "Module: CORE. Permission DASHBOARD_READ. Read-only."
+  - name: Academic Years
+    description: "Module: CORE. Permissions ACADEMIC_YEAR_READ/_CREATE/_UPDATE/_DELETE."
+  - name: Programs
+    description: "Module: CORE. Permissions PROGRAM_READ/_CREATE/_UPDATE/_DELETE."
+  - name: Batches
+    description: "Module: CORE. Permissions BATCH_READ/_CREATE/_UPDATE/_DELETE."
+  - name: Sections
+    description: "Module: CORE. Permissions SECTION_READ/_CREATE/_UPDATE/_DELETE."
+  - name: Subjects
+    description: "Module: CORE. Permissions SUBJECT_READ/_CREATE/_UPDATE/_DELETE."
+  - name: Faculty
+    description: "Module: CORE. Permissions FACULTY_READ/_CREATE/_UPDATE/_DELETE."
+  - name: Rooms
+    description: "Module: CORE. Permissions ROOM_READ/_CREATE/_UPDATE/_DELETE."
+  - name: Timetable
+    description: "Module: ACADEMICS. Permissions TIMETABLE_READ/_CREATE/_UPDATE/_DELETE."
+  - name: Institution
+    description: "Module: CORE. Permissions INSTITUTION_READ/_UPDATE. Singleton (caller's own tenant)."
+  - name: RBAC
+    description: "Module: CORE. Permissions ROLE_READ/ROLE_MANAGE."
+  - name: Audit Logs
+    description: "Module: CORE. Permission AUDIT_LOG_READ."
+  - name: Attendance
+    description: "Module: ACADEMICS. Permissions ATTENDANCE_READ/_MARK/_EDIT/_APPROVE."
+  - name: Leave
+    description: "Module: ACADEMICS. Permissions LEAVE_READ/_REQUEST/_APPROVE."
+  - name: Assignments
+    description: "Module: ACADEMICS. Permissions ASSIGNMENT_READ/_MANAGE/_SUBMIT/_EVALUATE."
+  - name: Examinations
+    description: "Module: EXAMINATION. Permissions EXAM_READ/_MANAGE, MARKS_READ/_ENTER/_EDIT/_VERIFY/_PUBLISH/_REVISE."
+  - name: Announcements
+    description: "Module: COMMUNICATION. Permissions ANNOUNCEMENT_READ/_MANAGE."
+  - name: Documents
+    description: "Module: CORE. Permissions DOCUMENT_READ/_MANAGE/_VERIFY."
+  - name: Reports
+    description: "Module: CORE. Permission REPORTS_READ. Read-only aggregations."
+  - name: Import-Export
+    description: "Module: CORE. Permissions STUDENT_IMPORT/STUDENT_EXPORT. CSV only."
+  - name: Admissions
+    description: "Module: ADMISSIONS. Permissions ADMISSION_READ/_CREATE/_UPDATE/_DECIDE/_ENROLL."
+  - name: Fees
+    description: "Module: FINANCE. Permissions FEE_READ/_MANAGE, PAYMENT_RECORD/_REFUND. Internal ledger, no live gateway."
+  - name: Hostel
+    description: "Module: HOSTEL_TRANSPORT. Permissions HOSTEL_READ/_MANAGE/_ALLOCATE."
+  - name: Transport
+    description: "Module: HOSTEL_TRANSPORT. Permissions TRANSPORT_READ/_MANAGE/_ALLOCATE."
+  - name: Library
+    description: "Module: LIBRARY. Permissions LIBRARY_READ/_MANAGE/_ISSUE."
+  - name: Certificates
+    description: "Module: CORE. Permissions CERTIFICATE_READ/_REQUEST/_ISSUE."
+  - name: Activities
+    description: "Module: CORE. Permissions ACTIVITY_READ/_MANAGE/_SELF_REPORT."
+  - name: Placements
+    description: "Module: PLACEMENT_ALUMNI. Permissions PLACEMENT_READ/_MANAGE/_APPLY."
+  - name: Billing
+    description: "Module: CORE. Permissions BILLING_READ/_MANAGE. Internal subscription/invoice ledger."
+  - name: API Keys
+    description: "Module: CORE. Permissions API_KEY_READ/_MANAGE. A key authenticates AS its creating user."
+  - name: Webhooks
+    description: "Module: CORE. Permissions WEBHOOK_READ/_MANAGE. SSRF-guarded, inline HMAC-signed delivery."
+  - name: Integrations
+    description: "Module: CORE. Permissions INTEGRATION_READ/_MANAGE. Config only, no live calls."
+  - name: Approvals
+    description: "Module: CORE. Permissions APPROVAL_READ/_MANAGE. Minimal generic approval engine."
+  - name: Notifications
+    description: "Module: CORE. Permission NOTIFICATION_READ. Self-account-management only."
+  - name: Class Groups
+    description: "Module: CORE. Permissions CLASS_GROUP_READ/_POST/_MANAGE. A Section's message board."
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness/readiness (basic)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string, example: ok } } }
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { status: { type: string } } } } } }
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Readiness probe (checks the database connection)
+      security: []
+      responses:
+        "200": { description: Ready, content: { application/json: { schema: { type: object, properties: { status: { type: string } } } } } }
+        "503": { description: Database unreachable }
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in
+      description: Rate-limited (20 req/15min). If MFA is enabled on the account, a missing/wrong `mfaCode` fails 401 before any token is issued.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                mfaCode: { type: string, description: "Required once MFA is enabled on the account" }
+      responses:
+        "200":
+          description: Logged in. Also sets an httpOnly `refreshToken` cookie.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: "#/components/schemas/AuthUser" }
+                  token: { type: string, description: JWT access token }
+        "401":
+          description: Invalid credentials, inactive/locked account, or MFA required/invalid
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              examples:
+                mfaRequired: { value: { message: "MFA code required.", code: MFA_REQUIRED } }
+                mfaInvalid: { value: { message: "Invalid MFA code.", code: MFA_INVALID } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the refresh token, issue a new access token
+      description: Requires the httpOnly `refreshToken` cookie. Rate-limited (20 req/15min).
+      security: []
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { token: { type: string } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out
+      description: Revokes and clears the refresh token cookie.
+      security: []
+      responses:
+        "204": { description: Logged out }
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the current user
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { user: { $ref: "#/components/schemas/AuthUser" } } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/auth/mfa/setup:
+    post:
+      tags: [Auth]
+      summary: Begin MFA setup (TOTP)
+      description: Generates a new secret + 10 one-time recovery codes. Replaces any previous pending setup. Does not enable MFA yet — call `/mfa/enable` with a verified code.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: string, description: "Base32 TOTP secret" }
+                  otpauthUri: { type: string, description: "otpauth:// URI — render as a QR code" }
+                  recoveryCodes: { type: array, items: { type: string }, description: "Shown once" }
+  /api/v1/auth/mfa/enable:
+    post:
+      tags: [Auth]
+      summary: Enable MFA
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } }
+      responses:
+        "204": { description: Enabled }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/auth/mfa/disable:
+    post:
+      tags: [Auth]
+      summary: Disable MFA
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } }
+      responses:
+        "204": { description: Disabled }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/v1/auth/sessions:
+    get:
+      tags: [Auth]
+      summary: List the caller's own active sessions
+      description: A session is a non-revoked, non-expired RefreshToken row.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties: { id: { type: string }, createdAt: { type: string, format: date-time }, expiresAt: { type: string, format: date-time } }
+  /api/v1/auth/sessions/{id}:
+    delete:
+      tags: [Auth]
+      summary: Revoke a session ("log out this device")
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses:
+        "204": { description: Revoked }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/auth/login-history:
+    get:
+      tags: [Auth]
+      summary: The caller's own last 50 login attempts (success and failure)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    success: { type: boolean }
+                    ipAddress: { type: string, nullable: true }
+                    userAgent: { type: string, nullable: true }
+                    createdAt: { type: string, format: date-time }
+
+  /api/v1/departments:
+    get:
+      tags: [Departments]
+      summary: List departments
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { $ref: "#/components/parameters/Search" }
+        - name: status
+          in: query
+          schema: { type: string, enum: [ACTIVE, INACTIVE] }
+      responses:
+        "200": { $ref: "#/components/responses/PaginatedDepartments" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Departments]
+      summary: Create a department
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/DepartmentInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Department" } } } }
+        "409": { description: "DUPLICATE_CODE — repeated code (case-insensitive, per tenant)", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /api/v1/departments/{id}:
+    get:
+      tags: [Departments]
+      summary: Get a department
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Department" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Departments]
+      summary: Update a department
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/DepartmentInput" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Department" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Departments]
+      summary: Delete a department
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses:
+        "204": { description: Deleted }
+        "409": { description: "DEPARTMENT_IN_USE — still has students", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
+  /api/v1/students:
+    get:
+      tags: [Students]
+      summary: List students
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { $ref: "#/components/parameters/Search" }
+        - name: departmentId
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [ACTIVE, INACTIVE, ALUMNI] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/PaginatedMeta" }
+                  - type: object
+                    properties: { data: { type: array, items: { $ref: "#/components/schemas/Student" } } }
+    post:
+      tags: [Students]
+      summary: Create a student
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/StudentInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Student" } } } }
+        "409": { description: "DUPLICATE_EMAIL / DUPLICATE_ROLL_NUMBER", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /api/v1/students/{id}:
+    get:
+      tags: [Students]
+      summary: Get a student
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Student" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Students]
+      summary: Update a student
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/StudentInput" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Student" } } } }
+    delete:
+      tags: [Students]
+      summary: Delete a student
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses:
+        "204": { description: Deleted }
+
+  /api/v1/dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: Summary counts
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalStudents: { type: integer }
+                  activeStudents: { type: integer }
+                  totalDepartments: { type: integer }
+                  totalFaculty: { type: integer }
+                  pendingAdmissions: { type: integer, description: "Hardcoded placeholder (7)" }
+  /api/v1/dashboard/trend:
+    get:
+      tags: [Dashboard]
+      summary: Enrollment trend by admission month
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { type: object, properties: { month: { type: string }, count: { type: integer } } } } } } }
+  /api/v1/dashboard/distribution:
+    get:
+      tags: [Dashboard]
+      summary: Student distribution by active department
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { type: object, properties: { departmentId: { type: string }, name: { type: string }, code: { type: string }, studentCount: { type: integer } } } } } } }
+  /api/v1/dashboard/activity:
+    get:
+      tags: [Dashboard]
+      summary: Latest 10 audit activity entries
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { type: object, properties: { id: { type: string }, message: { type: string }, actor: { type: string }, timestamp: { type: string, format: date-time } } } } } } }
+
+  /api/v1/academic-years:
+    get:
+      tags: [Academic Years]
+      summary: List academic years
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { $ref: "#/components/parameters/Search" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+    post:
+      tags: [Academic Years]
+      summary: Create an academic year
+      description: Setting `isCurrent true` clears it on every other academic year for the tenant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, startDate, endDate]
+              properties:
+                name: { type: string, maxLength: 20 }
+                startDate: { type: string, format: date }
+                endDate: { type: string, format: date }
+                isCurrent: { type: boolean }
+                status: { type: string, enum: [ACTIVE, CLOSED] }
+      responses:
+        "201": { description: Created }
+        "409": { description: "DUPLICATE_ACADEMIC_YEAR" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /api/v1/academic-years/{id}:
+    get:
+      tags: [Academic Years]
+      summary: Get an academic year
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } }
+    put:
+      tags: [Academic Years]
+      summary: Update an academic year
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [Academic Years]
+      summary: Delete an academic year
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "204": { description: Deleted }, "409": { description: "ACADEMIC_YEAR_IN_USE — still has batches" } }
+
+  /api/v1/programs:
+    get:
+      tags: [Programs]
+      summary: List programs
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { $ref: "#/components/parameters/Search" }
+        - name: departmentId
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [ACTIVE, INACTIVE] }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+    post:
+      tags: [Programs]
+      summary: Create a program
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [departmentId, name, code, durationYears]
+              properties:
+                departmentId: { type: string }
+                name: { type: string }
+                code: { type: string, minLength: 2, maxLength: 12 }
+                durationYears: { type: integer, minimum: 1, maximum: 10 }
+                status: { type: string, enum: [ACTIVE, INACTIVE] }
+      responses:
+        "201": { description: Created }
+        "400": { description: "Invalid departmentId" }
+        "409": { description: "DUPLICATE_CODE" }
+  /api/v1/programs/{id}:
+    put:
+      tags: [Programs]
+      summary: Update a program
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [Programs]
+      summary: Delete a program
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "204": { description: Deleted }, "409": { description: "PROGRAM_IN_USE — still has batches or subjects" } }
+
+  /api/v1/batches:
+    get:
+      tags: [Batches]
+      summary: List batches
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+    post:
+      tags: [Batches]
+      summary: Create a batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [programId, academicYearId, name, startYear, endYear]
+              properties:
+                programId: { type: string }
+                academicYearId: { type: string }
+                name: { type: string, maxLength: 40 }
+                startYear: { type: integer }
+                endYear: { type: integer, description: "> startYear" }
+                status: { type: string, enum: [ACTIVE, INACTIVE, GRADUATED] }
+      responses:
+        "201": { description: Created }
+        "409": { description: "DUPLICATE_BATCH — repeated name within the program" }
+  /api/v1/batches/{id}:
+    put: { tags: [Batches], summary: Update a batch, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Batches], summary: Delete a batch, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "BATCH_IN_USE — still has sections" } } }
+
+  /api/v1/sections:
+    get:
+      tags: [Sections]
+      summary: List sections
+      parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+    post:
+      tags: [Sections]
+      summary: Create a section
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [batchId, name, currentSemester]
+              properties:
+                batchId: { type: string }
+                name: { type: string, maxLength: 10 }
+                currentSemester: { type: integer, minimum: 1, maximum: 12 }
+                capacity: { type: integer }
+                status: { type: string, enum: [ACTIVE, INACTIVE] }
+      responses:
+        "201": { description: Created }
+        "409": { description: "DUPLICATE_SECTION — repeated name within the batch" }
+  /api/v1/sections/{id}:
+    put: { tags: [Sections], summary: Update a section, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Sections], summary: Delete a section, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "SECTION_IN_USE — still has students or timetable entries" } } }
+
+  /api/v1/subjects:
+    get:
+      tags: [Subjects]
+      summary: List subjects
+      parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+    post:
+      tags: [Subjects]
+      summary: Create a subject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [programId, semesterNumber, code, name, credits]
+              properties:
+                programId: { type: string }
+                semesterNumber: { type: integer, minimum: 1, maximum: 12 }
+                code: { type: string, minLength: 2, maxLength: 12 }
+                name: { type: string }
+                credits: { type: integer, minimum: 1, maximum: 10 }
+                type: { type: string, enum: [CORE, ELECTIVE, LAB, PROJECT, SEMINAR, PRACTICAL] }
+                facultyId: { type: string, nullable: true }
+      responses:
+        "201": { description: Created }
+        "409": { description: "DUPLICATE_CODE" }
+  /api/v1/subjects/{id}:
+    put: { tags: [Subjects], summary: Update a subject, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Subjects], summary: Delete a subject, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "SUBJECT_IN_USE — still has timetable entries" } } }
+
+  /api/v1/faculty:
+    get:
+      tags: [Faculty]
+      summary: List faculty
+      parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }, { $ref: "#/components/parameters/Search" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+    post:
+      tags: [Faculty]
+      summary: Create a faculty member
+      description: Provisions the underlying login account (User, role FACULTY) too.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password, employeeCode, departmentId, designation, joiningDate]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                employeeCode: { type: string }
+                departmentId: { type: string }
+                designation: { type: string }
+                qualification: { type: string }
+                experienceYears: { type: integer }
+                joiningDate: { type: string, format: date }
+                status: { type: string, enum: [ACTIVE, INACTIVE] }
+      responses:
+        "201": { description: Created }
+        "409": { description: "DUPLICATE_EMAIL / DUPLICATE_EMPLOYEE_CODE" }
+  /api/v1/faculty/{id}:
+    put:
+      tags: [Faculty]
+      summary: Update a faculty member
+      description: No email/password changes yet.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [Faculty]
+      summary: Deactivate a faculty member
+      description: Sets isActive false on the linked account rather than deleting it.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses: { "204": { description: Deactivated }, "409": { description: "FACULTY_IN_USE — still referenced by timetable entries" } }
+
+  /api/v1/rooms:
+    get:
+      tags: [Rooms]
+      summary: List rooms
+      parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+    post:
+      tags: [Rooms]
+      summary: Create a room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, code]
+              properties:
+                name: { type: string }
+                code: { type: string, maxLength: 20 }
+                capacity: { type: integer }
+                status: { type: string, enum: [ACTIVE, INACTIVE] }
+      responses: { "201": { description: Created }, "409": { description: "DUPLICATE_CODE" } }
+  /api/v1/rooms/{id}:
+    put: { tags: [Rooms], summary: Update a room, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Rooms], summary: Delete a room, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "ROOM_IN_USE — still has timetable entries" } } }
+
+  /api/v1/timetable:
+    get:
+      tags: [Timetable]
+      summary: List timetable entries
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - name: sectionId
+          in: query
+          schema: { type: string }
+        - name: facultyId
+          in: query
+          schema: { type: string }
+        - name: roomId
+          in: query
+          schema: { type: string }
+        - name: dayOfWeek
+          in: query
+          schema: { type: string, enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY] }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+    post:
+      tags: [Timetable]
+      summary: Create a timetable entry
+      description: "409 FACULTY_CONFLICT / ROOM_CONFLICT / SECTION_CONFLICT if an overlapping entry already exists that day."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sectionId, subjectId, facultyId, roomId, dayOfWeek, startTime, endTime]
+              properties:
+                sectionId: { type: string }
+                subjectId: { type: string }
+                facultyId: { type: string }
+                roomId: { type: string }
+                dayOfWeek: { type: string, enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY] }
+                startTime: { type: string, example: "09:00", description: "HH:mm 24h" }
+                endTime: { type: string, example: "10:00" }
+      responses:
+        "201": { description: Created }
+        "400": { description: "Invalid relation id" }
+        "409": { description: "FACULTY_CONFLICT / ROOM_CONFLICT / SECTION_CONFLICT" }
+  /api/v1/timetable/{id}:
+    put: { tags: [Timetable], summary: Update a timetable entry, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Timetable], summary: Delete a timetable entry, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } }
+
+  /api/v1/institution:
+    get:
+      tags: [Institution]
+      summary: Get institution settings (the caller's own tenant)
+      responses: { "200": { description: OK } }
+    put:
+      tags: [Institution]
+      summary: Update institution settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties: { name: { type: string }, primaryColor: { type: string, example: "#1677FF" } }
+      responses: { "200": { description: OK } }
+
+  /api/v1/roles:
+    get:
+      tags: [RBAC]
+      summary: List this tenant's roles and their granted permissions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties: { id: { type: string }, name: { type: string }, isSystem: { type: boolean }, permissions: { type: array, items: { type: string } } }
+  /api/v1/permissions:
+    get:
+      tags: [RBAC]
+      summary: The full permission catalogue
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, properties: { key: { type: string }, description: { type: string } } } }
+  /api/v1/users/{id}/role:
+    post:
+      tags: [RBAC]
+      summary: Replace a user's role assignment
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, required: [roleName], properties: { roleName: { type: string } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { userId: { type: string }, role: { type: string } } } } } }
+        "400": { description: "roleName isn't a role that exists for this tenant" }
+
+  /api/v1/audit-logs:
+    get:
+      tags: [Audit Logs]
+      summary: List audit log entries (newest first)
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: entity, in: query, schema: { type: string } }
+        - { name: entityId, in: query, schema: { type: string } }
+        - { name: actorUserId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+
+  /api/v1/attendance/sessions:
+    get:
+      tags: [Attendance]
+      summary: List attendance sessions
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: sectionId, in: query, schema: { type: string } }
+        - { name: subjectId, in: query, schema: { type: string } }
+        - { name: facultyId, in: query, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+    post:
+      tags: [Attendance]
+      summary: Create a session
+      description: Pre-populates one PRESENT record per active student in the section. `facultyId` resolves to the caller's own Faculty profile if omitted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sectionId, subjectId, date]
+              properties: { sectionId: { type: string }, subjectId: { type: string }, date: { type: string, format: date }, facultyId: { type: string } }
+      responses: { "201": { description: Created }, "409": { description: "DUPLICATE_SESSION" } }
+  /api/v1/attendance/sessions/{id}:
+    get: { tags: [Attendance], summary: "Get a session (with records[])", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+  /api/v1/attendance/sessions/{id}/records:
+    put:
+      tags: [Attendance]
+      summary: Mark attendance records
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [records]
+              properties:
+                records:
+                  type: array
+                  items:
+                    type: object
+                    properties: { studentId: { type: string }, status: { $ref: "#/components/schemas/AttendanceStatus" } }
+      responses: { "200": { description: OK }, "409": { description: "SESSION_LOCKED" } }
+  /api/v1/attendance/sessions/{id}/submit:
+    post: { tags: [Attendance], summary: "Submit (DRAFT -> SUBMITTED)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+  /api/v1/attendance/sessions/{id}/lock:
+    post: { tags: [Attendance], summary: "Lock (SUBMITTED -> LOCKED)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+  /api/v1/attendance/student/{studentId}:
+    get:
+      tags: [Attendance]
+      summary: A student's attendance records
+      parameters:
+        - { $ref: "#/components/parameters/PathId" }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+  /api/v1/attendance/records/{id}/correction:
+    post:
+      tags: [Attendance]
+      summary: Request a correction to a locked record
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [requestedStatus, reason], properties: { requestedStatus: { $ref: "#/components/schemas/AttendanceStatus" }, reason: { type: string } } }
+      responses: { "201": { description: Created } }
+  /api/v1/attendance/corrections:
+    get:
+      tags: [Attendance]
+      summary: List correction requests
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: status, in: query, schema: { type: string, enum: [PENDING, APPROVED, REJECTED] } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+  /api/v1/attendance/corrections/{id}/approve:
+    post: { tags: [Attendance], summary: Approve a correction (updates the record, writes a before/after audit entry), parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+  /api/v1/attendance/corrections/{id}/reject:
+    post: { tags: [Attendance], summary: Reject a correction, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+
+  /api/v1/leave/types:
+    get: { tags: [Leave], summary: List leave types, responses: { "200": { description: OK } } }
+    post:
+      tags: [Leave]
+      summary: Create a leave type
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name, defaultDaysPerYear], properties: { name: { type: string }, defaultDaysPerYear: { type: integer } } } } } }
+      responses: { "201": { description: Created } }
+  /api/v1/leave/types/{id}:
+    put: { tags: [Leave], summary: Update a leave type, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Leave], summary: Delete a leave type, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "LEAVE_TYPE_IN_USE" } } }
+  /api/v1/leave/requests:
+    get:
+      tags: [Leave]
+      summary: List leave requests
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: studentId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [PENDING, APPROVED, REJECTED] } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Leave]
+      summary: Submit a leave request (self-service)
+      description: "`studentId` resolves to the caller's own Student profile if omitted."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [leaveTypeId, startDate, endDate, reason]
+              properties: { leaveTypeId: { type: string }, startDate: { type: string, format: date }, endDate: { type: string, format: date }, reason: { type: string }, studentId: { type: string } }
+      responses: { "201": { description: "Created, PENDING" } }
+  /api/v1/leave/requests/{id}/approve:
+    post: { tags: [Leave], summary: Approve a leave request (sets AttendanceRecord to ON_LEAVE for the range), parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "ALREADY_REVIEWED" } } }
+  /api/v1/leave/requests/{id}/reject:
+    post: { tags: [Leave], summary: Reject a leave request, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "ALREADY_REVIEWED" } } }
+  /api/v1/leave/balance/{studentId}:
+    get:
+      tags: [Leave]
+      summary: A student's leave balance (computed on read)
+      parameters:
+        - { $ref: "#/components/parameters/PathId" }
+        - { name: year, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, properties: { leaveTypeId: { type: string }, leaveTypeName: { type: string }, defaultDaysPerYear: { type: integer }, usedDays: { type: integer }, remainingDays: { type: integer } } } }
+
+  /api/v1/assignments:
+    get:
+      tags: [Assignments]
+      summary: List assignments
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: sectionId, in: query, schema: { type: string } }
+        - { name: subjectId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [DRAFT, PUBLISHED, CLOSED] } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Assignments]
+      summary: Create an assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectId, sectionId, title, startDate, dueDate, maxMarks]
+              properties:
+                subjectId: { type: string }
+                sectionId: { type: string }
+                title: { type: string }
+                description: { type: string }
+                startDate: { type: string, format: date }
+                dueDate: { type: string, format: date }
+                maxMarks: { type: number }
+                facultyId: { type: string }
+      responses: { "201": { description: "Created, DRAFT" } }
+  /api/v1/assignments/{id}:
+    get: { tags: [Assignments], summary: Get an assignment, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    put: { tags: [Assignments], summary: Update an assignment, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "ASSIGNMENT_CLOSED" } } }
+    delete: { tags: [Assignments], summary: Delete an assignment, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "ASSIGNMENT_IN_USE" } } }
+  /api/v1/assignments/{id}/publish:
+    post: { tags: [Assignments], summary: Publish an assignment, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "INVALID_ASSIGNMENT_STATUS" } } }
+  /api/v1/assignments/{id}/close:
+    post: { tags: [Assignments], summary: Close an assignment, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "INVALID_ASSIGNMENT_STATUS" } } }
+  /api/v1/assignments/{id}/submissions:
+    get:
+      tags: [Assignments]
+      summary: List submissions for an assignment
+      parameters:
+        - { $ref: "#/components/parameters/PathId" }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: status, in: query, schema: { type: string, enum: [SUBMITTED, LATE, EVALUATED] } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Assignments]
+      summary: Submit an assignment (self-service)
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { attachmentUrl: { type: string }, studentId: { type: string } } } } } }
+      responses: { "201": { description: Created }, "409": { description: "ALREADY_SUBMITTED / ASSIGNMENT_NOT_PUBLISHED" } }
+  /api/v1/assignments/submissions/{submissionId}/evaluate:
+    put:
+      tags: [Assignments]
+      summary: Grade a submission
+      parameters: [{ name: submissionId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, required: [marksObtained], properties: { marksObtained: { type: number }, feedback: { type: string } } } }
+      responses: { "200": { description: OK }, "400": { description: "marksObtained exceeds maxMarks" } }
+
+  /api/v1/examinations/exams:
+    get: { tags: [Examinations], summary: List exams, responses: { "200": { description: OK } } }
+    post:
+      tags: [Examinations]
+      summary: Create an exam
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, examType, academicYearId, semesterNumber, startDate, endDate]
+              properties:
+                name: { type: string }
+                examType: { type: string, enum: [INTERNAL, MIDTERM, FINAL, SUPPLEMENTARY] }
+                academicYearId: { type: string }
+                semesterNumber: { type: integer }
+                startDate: { type: string, format: date }
+                endDate: { type: string, format: date }
+      responses: { "201": { description: Created } }
+  /api/v1/examinations/exams/{id}:
+    put: { tags: [Examinations], summary: Update an exam, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Examinations], summary: Delete an exam, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "EXAM_IN_USE" } } }
+  /api/v1/examinations/exams/{id}/schedules:
+    get: { tags: [Examinations], summary: List an exam's schedules, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    post:
+      tags: [Examinations]
+      summary: Create an exam schedule
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subjectId, examDate, startTime, endTime, roomId]
+              properties: { subjectId: { type: string }, examDate: { type: string, format: date }, startTime: { type: string }, endTime: { type: string }, roomId: { type: string } }
+      responses: { "201": { description: Created }, "409": { description: "DUPLICATE_SCHEDULE" } }
+  /api/v1/examinations/schedules/{id}:
+    put: { tags: [Examinations], summary: Update a schedule, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Examinations], summary: Delete a schedule, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "SCHEDULE_IN_USE" } } }
+  /api/v1/examinations/schedules/{id}/marks:
+    get: { tags: [Examinations], summary: "Get the full marks roster (staff-tier only)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    post:
+      tags: [Examinations]
+      summary: Enter marks (bulk, DRAFT)
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [marks]
+              properties:
+                marks:
+                  type: array
+                  items:
+                    type: object
+                    properties: { studentId: { type: string }, marksObtained: { type: number, nullable: true }, maxMarks: { type: number }, specialStatus: { type: string, enum: [ABSENT, MALPRACTICE, WITHHELD], nullable: true } }
+      responses: { "200": { description: OK }, "409": { description: "MARKS_NOT_EDITABLE" } }
+  /api/v1/examinations/schedules/{id}/marks/submit:
+    post: { tags: [Examinations], summary: "Bulk submit (DRAFT -> SUBMITTED)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "NO_MARKS_TO_TRANSITION" } } }
+  /api/v1/examinations/schedules/{id}/marks/verify:
+    post: { tags: [Examinations], summary: "Bulk verify (SUBMITTED -> VERIFIED)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "NO_MARKS_TO_TRANSITION" } } }
+  /api/v1/examinations/schedules/{id}/marks/publish:
+    post: { tags: [Examinations], summary: "Bulk publish (VERIFIED -> PUBLISHED)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "NO_MARKS_TO_TRANSITION" } } }
+  /api/v1/examinations/marks/{id}:
+    put:
+      tags: [Examinations]
+      summary: Edit a mark before verification
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { marksObtained: { type: number }, specialStatus: { type: string } } } } } }
+      responses: { "200": { description: OK }, "409": { description: "MARKS_NOT_EDITABLE" } }
+  /api/v1/examinations/marks/{id}/revise:
+    put:
+      tags: [Examinations]
+      summary: Revise a published mark (always audited)
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, required: [marksObtained, reason], properties: { marksObtained: { type: number }, reason: { type: string } } } }
+      responses: { "200": { description: OK } }
+  /api/v1/examinations/results/semester/{semesterNumber}:
+    get:
+      tags: [Examinations]
+      summary: "Semester result (computed on read from PUBLISHED marks; SGPA)"
+      parameters:
+        - { name: semesterNumber, in: path, required: true, schema: { type: integer } }
+        - { name: studentId, in: query, schema: { type: string }, description: "Defaults to the caller's own" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  studentId: { type: string }
+                  semesterNumber: { type: integer }
+                  subjects: { type: array, items: { type: object, properties: { subjectId: { type: string }, name: { type: string }, code: { type: string }, credits: { type: integer }, percentage: { type: number }, grade: { type: string }, gradePoints: { type: number } } } }
+                  sgpa: { type: number }
+  /api/v1/examinations/results/cgpa:
+    get:
+      tags: [Examinations]
+      summary: CGPA (computed on read)
+      parameters: [{ name: studentId, in: query, schema: { type: string } }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, properties: { studentId: { type: string }, subjectsCounted: { type: integer }, totalCredits: { type: integer }, cgpa: { type: number } } }
+
+  /api/v1/announcements:
+    get:
+      tags: [Announcements]
+      summary: List announcements (unfiltered admin view)
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: audience, in: query, schema: { type: string, enum: [COLLEGE, DEPARTMENT, PROGRAM, BATCH, SECTION] } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Announcements]
+      summary: Create an announcement
+      description: "Publishing notifies the resolved audience (see Notifications). A 422 if the matching scope id (e.g. departmentId for DEPARTMENT) is missing."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, content, audience]
+              properties:
+                title: { type: string }
+                content: { type: string }
+                audience: { type: string, enum: [COLLEGE, DEPARTMENT, PROGRAM, BATCH, SECTION] }
+                priority: { type: string, enum: [LOW, MEDIUM, HIGH] }
+                publishAt: { type: string, format: date-time }
+                expiryAt: { type: string, format: date-time, nullable: true }
+                departmentId: { type: string }
+                programId: { type: string }
+                batchId: { type: string }
+                sectionId: { type: string }
+      responses: { "201": { description: Created }, "422": { $ref: "#/components/responses/ValidationError" } }
+  /api/v1/announcements/feed:
+    get:
+      tags: [Announcements]
+      summary: "The caller's personal feed (college-wide + own department/program/batch/section, currently published)"
+      responses: { "200": { description: OK } }
+  /api/v1/announcements/{id}:
+    get: { tags: [Announcements], summary: Get an announcement, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    put: { tags: [Announcements], summary: Update an announcement, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Announcements], summary: Delete an announcement, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } }
+
+  /api/v1/documents:
+    get:
+      tags: [Documents]
+      summary: "List all documents (staff-tier only)"
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: ownerType, in: query, schema: { type: string, enum: [STUDENT, FACULTY] } }
+        - { name: ownerId, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [PENDING, VERIFIED, REJECTED] } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Documents]
+      summary: Create a document record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ownerType, ownerId, type, fileUrl]
+              properties:
+                ownerType: { type: string, enum: [STUDENT, FACULTY] }
+                ownerId: { type: string }
+                type: { type: string, enum: [BONAFIDE, TRANSFER_CERTIFICATE, CONDUCT_CERTIFICATE, MARK_SHEET, ID_PROOF, OTHER] }
+                fileUrl: { type: string }
+                expiryDate: { type: string, format: date }
+      responses: { "201": { description: "Created, PENDING" } }
+  /api/v1/documents/mine:
+    get: { tags: [Documents], summary: "The caller's own documents", responses: { "200": { description: OK } } }
+  /api/v1/documents/{id}:
+    put: { tags: [Documents], summary: "Update a document (bumps version, resets to PENDING)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+  /api/v1/documents/{id}/verify:
+    post: { tags: [Documents], summary: Verify a document, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "ALREADY_REVIEWED" } } }
+  /api/v1/documents/{id}/reject:
+    post: { tags: [Documents], summary: Reject a document, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "ALREADY_REVIEWED" } } }
+
+  /api/v1/reports/student-strength:
+    get:
+      tags: [Reports]
+      summary: Student strength
+      parameters:
+        - { name: departmentId, in: query, schema: { type: string } }
+        - { name: programId, in: query, schema: { type: string } }
+        - { name: batchId, in: query, schema: { type: string } }
+        - { name: sectionId, in: query, schema: { type: string } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { total: { type: integer }, byDepartment: { type: array, items: { type: object, properties: { departmentId: { type: string }, count: { type: integer } } } } } } } } } }
+  /api/v1/reports/attendance:
+    get:
+      tags: [Reports]
+      summary: Attendance report
+      parameters:
+        - { name: sectionId, in: query, schema: { type: string } }
+        - { name: subjectId, in: query, schema: { type: string } }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { totalSessions: { type: integer }, totalRecords: { type: integer }, presentCount: { type: integer }, attendancePercentage: { type: number } } } } } } }
+  /api/v1/reports/department-performance:
+    get: { tags: [Reports], summary: Department performance, responses: { "200": { description: OK } } }
+  /api/v1/reports/subject-performance:
+    get: { tags: [Reports], summary: Subject performance, parameters: [{ name: programId, in: query, schema: { type: string } }], responses: { "200": { description: OK } } }
+  /api/v1/reports/exam-results:
+    get: { tags: [Reports], summary: Exam results, parameters: [{ name: examId, in: query, required: true, schema: { type: string } }], responses: { "200": { description: OK } } }
+  /api/v1/reports/faculty-workload:
+    get: { tags: [Reports], summary: Faculty workload, responses: { "200": { description: OK } } }
+  /api/v1/reports/financial-summary:
+    get:
+      tags: [Reports]
+      summary: "Financial summary (invoiced/collected/outstanding by category)"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalInvoiced: { type: integer }
+                  totalCollected: { type: integer }
+                  totalOutstanding: { type: integer }
+                  byCategory: { type: array, items: { type: object, properties: { category: { type: string }, invoiced: { type: integer }, collected: { type: integer }, outstanding: { type: integer } } } }
+  /api/v1/reports/dropout:
+    get:
+      tags: [Reports]
+      summary: "Dropout report (INACTIVE students who never reached ALUMNI)"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, properties: { total: { type: integer }, byDepartment: { type: array, items: { type: object } }, students: { type: array, items: { type: object } } } }
+
+  /api/v1/import-export/students/preview:
+    post:
+      tags: [Import-Export]
+      summary: Validate a student CSV without creating anything
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, required: [csv], properties: { csv: { type: string } } } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, properties: { totalRows: { type: integer }, validCount: { type: integer }, invalidCount: { type: integer }, results: { type: array, items: { type: object, properties: { row: { type: integer }, valid: { type: boolean }, errors: { type: array, items: { type: string } } } } } } }
+  /api/v1/import-export/students/commit:
+    post:
+      tags: [Import-Export]
+      summary: Import a student CSV (invalid rows skipped and reported, never partial)
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, required: [csv], properties: { csv: { type: string } } } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, properties: { createdCount: { type: integer }, failedCount: { type: integer }, failed: { type: array, items: { type: object, properties: { row: { type: integer }, errors: { type: array, items: { type: string } } } } } } }
+  /api/v1/import-export/students/export:
+    get:
+      tags: [Import-Export]
+      summary: Export students as CSV
+      parameters: [{ name: departmentId, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }]
+      responses:
+        "200": { description: "text/csv", content: { text/csv: { schema: { type: string } } } }
+
+  /api/v1/admissions:
+    get:
+      tags: [Admissions]
+      summary: List admission applications
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: programId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [APPLIED, DOCUMENT_VERIFICATION, SHORTLISTED, APPROVED, OFFERED, ACCEPTED, ENROLLED, REJECTED, WITHDRAWN] } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Admissions]
+      summary: Create an admission application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [firstName, lastName, email, phone, dateOfBirth, programId]
+              properties: { firstName: { type: string }, lastName: { type: string }, email: { type: string }, phone: { type: string }, dateOfBirth: { type: string, format: date }, programId: { type: string } }
+      responses: { "201": { description: "Created, APPLIED" }, "409": { description: "DUPLICATE_APPLICATION" } }
+  /api/v1/admissions/{id}:
+    get: { tags: [Admissions], summary: Get an application, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    put: { tags: [Admissions], summary: Update an application, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "APPLICATION_FINALIZED" } } }
+  /api/v1/admissions/{id}/advance:
+    post:
+      tags: [Admissions]
+      summary: Advance one lifecycle step
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { reviewNotes: { type: string } } } } } }
+      responses: { "200": { description: OK }, "409": { description: "ALREADY_AT_FINAL_STAGE" } }
+  /api/v1/admissions/{id}/reject:
+    post:
+      tags: [Admissions]
+      summary: Reject an application
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { reviewNotes: { type: string } } } } } }
+      responses: { "200": { description: OK } }
+  /api/v1/admissions/{id}/withdraw:
+    post: { tags: [Admissions], summary: Withdraw an application, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+  /api/v1/admissions/{id}/enroll:
+    post:
+      tags: [Admissions]
+      summary: Enroll an ACCEPTED applicant (creates the Student)
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [rollNumber, gender], properties: { rollNumber: { type: string }, gender: { type: string, enum: [MALE, FEMALE, OTHER] }, sectionId: { type: string } } }
+      responses: { "201": { description: "Created — Student with admissionApplicationId set" }, "409": { description: "NOT_ACCEPTED" } }
+
+  /api/v1/fees/structures:
+    get:
+      tags: [Fees]
+      summary: List fee structures
+      parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Fees]
+      summary: Create a fee structure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [programId, academicYearId, category, amount]
+              properties: { programId: { type: string }, academicYearId: { type: string }, category: { $ref: "#/components/schemas/FeeCategory" }, amount: { type: integer } }
+      responses: { "201": { description: Created }, "409": { description: "DUPLICATE_STRUCTURE" } }
+  /api/v1/fees/structures/{id}:
+    delete: { tags: [Fees], summary: Delete a fee structure, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "STRUCTURE_IN_USE" } } }
+  /api/v1/fees/invoices:
+    get:
+      tags: [Fees]
+      summary: "List invoices (staff-tier only, FEE_MANAGE)"
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: studentId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [PENDING, PARTIAL, PAID, OVERDUE, WAIVED] } }
+        - { name: category, in: query, schema: { $ref: "#/components/schemas/FeeCategory" } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Fees]
+      summary: Create an invoice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [studentId, category, amount, dueDate]
+              properties: { studentId: { type: string }, feeStructureId: { type: string }, category: { $ref: "#/components/schemas/FeeCategory" }, amount: { type: integer }, dueDate: { type: string, format: date } }
+      responses: { "201": { description: "Created, PENDING" } }
+  /api/v1/fees/invoices/mine:
+    get: { tags: [Fees], summary: "The caller's own invoices (self-service)", responses: { "200": { description: OK } } }
+  /api/v1/fees/invoices/{id}:
+    get: { tags: [Fees], summary: Get an invoice, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+  /api/v1/fees/invoices/{id}/adjustments:
+    post:
+      tags: [Fees]
+      summary: Add an adjustment (recomputes status)
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [type, amount, reason], properties: { type: { type: string, enum: [DISCOUNT, SCHOLARSHIP, FINE] }, amount: { type: integer }, reason: { type: string } } }
+      responses: { "200": { description: OK } }
+  /api/v1/fees/invoices/{id}/waive:
+    post: { tags: [Fees], summary: "Waive an invoice (sticky WAIVED override)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+  /api/v1/fees/invoices/{id}/payments:
+    post:
+      tags: [Fees]
+      summary: Record a payment
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [amount, method], properties: { amount: { type: integer }, method: { type: string }, transactionRef: { type: string } } }
+      responses: { "201": { description: Created }, "409": { description: "INVOICE_SETTLED" } }
+  /api/v1/fees/payments/{id}/refund:
+    post:
+      tags: [Fees]
+      summary: Refund a payment
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, required: [amount, reason], properties: { amount: { type: integer }, reason: { type: string } } } }
+      responses: { "201": { description: "Created (isRefund: true)" } }
+
+  /api/v1/hostel/hostels:
+    get: { tags: [Hostel], summary: List hostels, responses: { "200": { description: OK } } }
+    post: { tags: [Hostel], summary: Create a hostel, requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string } } } } } }, responses: { "201": { description: Created } } }
+  /api/v1/hostel/hostels/{id}:
+    delete: { tags: [Hostel], summary: Delete a hostel, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "HOSTEL_IN_USE" } } }
+  /api/v1/hostel/rooms:
+    get: { tags: [Hostel], summary: List hostel rooms, responses: { "200": { description: OK } } }
+    post:
+      tags: [Hostel]
+      summary: Create a hostel room
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [hostelId, roomNumber, capacity], properties: { hostelId: { type: string }, roomNumber: { type: string }, capacity: { type: integer } } } } } }
+      responses: { "201": { description: Created } }
+  /api/v1/hostel/rooms/{id}:
+    delete: { tags: [Hostel], summary: Delete a hostel room, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "ROOM_IN_USE" } } }
+  /api/v1/hostel/allocations:
+    get: { tags: [Hostel], summary: "List allocations (staff-tier only)", parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } } }
+    post:
+      tags: [Hostel]
+      summary: Allocate a room
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, required: [studentId, hostelRoomId, startDate], properties: { studentId: { type: string }, hostelRoomId: { type: string }, startDate: { type: string, format: date } } } }
+      responses: { "201": { description: Created }, "409": { description: "ROOM_FULL / ALREADY_ALLOCATED" } }
+  /api/v1/hostel/allocations/mine:
+    get: { tags: [Hostel], summary: "The caller's own allocation (self-service)", responses: { "200": { description: OK } } }
+  /api/v1/hostel/allocations/{id}/vacate:
+    post: { tags: [Hostel], summary: Vacate an allocation, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: "OK, status INACTIVE" } } }
+
+  /api/v1/transport/vehicles:
+    get: { tags: [Transport], summary: List vehicles, responses: { "200": { description: OK } } }
+    post:
+      tags: [Transport]
+      summary: Create a vehicle
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [registrationNumber, driverName, driverPhone, capacity], properties: { registrationNumber: { type: string }, driverName: { type: string }, driverPhone: { type: string }, capacity: { type: integer } } } } } }
+      responses: { "201": { description: Created } }
+  /api/v1/transport/vehicles/{id}:
+    delete: { tags: [Transport], summary: Delete a vehicle, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "VEHICLE_IN_USE" } } }
+  /api/v1/transport/routes:
+    get: { tags: [Transport], summary: List routes, responses: { "200": { description: OK } } }
+    post:
+      tags: [Transport]
+      summary: Create a route
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, vehicleId: { type: string } } } } } }
+      responses: { "201": { description: Created } }
+  /api/v1/transport/routes/{id}:
+    delete: { tags: [Transport], summary: Delete a route, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "ROUTE_IN_USE" } } }
+  /api/v1/transport/routes/{id}/stops:
+    post:
+      tags: [Transport]
+      summary: Add a stop to a route
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name, sequence], properties: { name: { type: string }, sequence: { type: integer } } } } } }
+      responses: { "201": { description: Created }, "409": { description: "DUPLICATE_SEQUENCE" } }
+  /api/v1/transport/stops/{id}:
+    delete: { tags: [Transport], summary: Delete a stop, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "STOP_IN_USE" } } }
+  /api/v1/transport/allocations:
+    get: { tags: [Transport], summary: "List allocations (staff-tier only)", parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } } }
+    post:
+      tags: [Transport]
+      summary: Allocate a route/stop
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [studentId, routeId, stopId], properties: { studentId: { type: string }, routeId: { type: string }, stopId: { type: string } } } } } }
+      responses: { "201": { description: Created }, "409": { description: "ALREADY_ALLOCATED" } }
+  /api/v1/transport/allocations/mine:
+    get: { tags: [Transport], summary: "The caller's own allocation (self-service)", responses: { "200": { description: OK } } }
+  /api/v1/transport/allocations/{id}/remove:
+    post: { tags: [Transport], summary: Remove an allocation, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: "OK, status INACTIVE" } } }
+
+  /api/v1/library/books:
+    get: { tags: [Library], summary: List books, parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } } }
+    post:
+      tags: [Library]
+      summary: Create a book
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [title, author, totalCopies], properties: { title: { type: string }, author: { type: string }, publisher: { type: string }, category: { type: string }, isbn: { type: string }, totalCopies: { type: integer } } } } } }
+      responses: { "201": { description: Created } }
+  /api/v1/library/books/{id}:
+    put: { tags: [Library], summary: Update a book, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Library], summary: Delete a book, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "BOOK_IN_USE" } } }
+  /api/v1/library/issues:
+    get:
+      tags: [Library]
+      summary: "List issues (staff-tier only)"
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: bookId, in: query, schema: { type: string } }
+        - { name: ownerType, in: query, schema: { type: string, enum: [STUDENT, FACULTY] } }
+        - { name: ownerId, in: query, schema: { type: string } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Library]
+      summary: Issue a book
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [bookId, ownerType, ownerId, dueDate], properties: { bookId: { type: string }, ownerType: { type: string, enum: [STUDENT, FACULTY] }, ownerId: { type: string }, dueDate: { type: string, format: date } } }
+      responses: { "201": { description: Created }, "409": { description: "NO_COPIES_AVAILABLE" } }
+  /api/v1/library/issues/mine:
+    get: { tags: [Library], summary: "The caller's own issues (self-service)", responses: { "200": { description: OK } } }
+  /api/v1/library/issues/{id}/return:
+    post: { tags: [Library], summary: "Return a book (computes fineAmount, ₹10/day late)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+
+  /api/v1/certificates/types:
+    get: { tags: [Certificates], summary: List certificate types, responses: { "200": { description: OK } } }
+    post: { tags: [Certificates], summary: Create a certificate type, requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, category: { type: string } } } } } }, responses: { "201": { description: Created } } }
+  /api/v1/certificates/types/{id}:
+    delete: { tags: [Certificates], summary: Delete a certificate type, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "CERTIFICATE_TYPE_IN_USE" } } }
+  /api/v1/certificates/requests:
+    get: { tags: [Certificates], summary: "List requests (staff-tier only)", parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } } }
+    post:
+      tags: [Certificates]
+      summary: Request a certificate (self-service)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [certificateTypeId], properties: { certificateTypeId: { type: string }, studentId: { type: string } } } } } }
+      responses: { "201": { description: "Created, REQUESTED" } }
+  /api/v1/certificates/requests/mine:
+    get: { tags: [Certificates], summary: "The caller's own requests", responses: { "200": { description: OK } } }
+  /api/v1/certificates/requests/{id}/issue:
+    post: { tags: [Certificates], summary: "Issue a certificate (sets verificationCode)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "ALREADY_REVIEWED" } } }
+  /api/v1/certificates/requests/{id}/reject:
+    post:
+      tags: [Certificates]
+      summary: Reject a certificate request
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [rejectionReason], properties: { rejectionReason: { type: string } } } } } }
+      responses: { "200": { description: OK } }
+  /api/v1/certificates/verify/{code}:
+    get:
+      tags: [Certificates]
+      summary: Verify a certificate by its code
+      parameters: [{ name: code, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, properties: { valid: { type: boolean }, certificateType: { type: string }, studentName: { type: string }, rollNumber: { type: string }, issuedAt: { type: string, format: date-time } } }
+
+  /api/v1/activities:
+    get: { tags: [Activities], summary: "List activities (staff-tier only)", parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }, { name: studentId, in: query, schema: { type: string } }, { name: type, in: query, schema: { type: string } }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } } }
+    post:
+      tags: [Activities]
+      summary: "Record an activity (studentId resolves to caller's own profile if omitted)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, title, date]
+              properties: { type: { type: string, enum: [ACHIEVEMENT, EVENT, CLUB, SPORTS, COMPETITION, INTERNSHIP, OTHER] }, title: { type: string }, description: { type: string }, date: { type: string, format: date }, certificateUrl: { type: string }, studentId: { type: string } }
+      responses: { "201": { description: Created } }
+  /api/v1/activities/mine:
+    get: { tags: [Activities], summary: "The caller's own activities", responses: { "200": { description: OK } } }
+  /api/v1/activities/{id}:
+    put: { tags: [Activities], summary: "Update an activity (staff-tier only)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Activities], summary: "Delete an activity (staff-tier only)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } }
+
+  /api/v1/placements/companies:
+    get: { tags: [Placements], summary: List companies, responses: { "200": { description: OK } } }
+    post: { tags: [Placements], summary: Create a company, requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, website: { type: string } } } } } }, responses: { "201": { description: Created } } }
+  /api/v1/placements/companies/{id}:
+    delete: { tags: [Placements], summary: Delete a company, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "COMPANY_IN_USE" } } }
+  /api/v1/placements/openings:
+    get: { tags: [Placements], summary: List job openings, responses: { "200": { description: OK } } }
+    post:
+      tags: [Placements]
+      summary: Create a job opening
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [companyId, title], properties: { companyId: { type: string }, title: { type: string }, description: { type: string }, minCgpa: { type: number }, ctcOffered: { type: number }, applicationDeadline: { type: string, format: date } } }
+      responses: { "201": { description: Created } }
+  /api/v1/placements/openings/{id}:
+    delete: { tags: [Placements], summary: Delete a job opening, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "OPENING_IN_USE" } } }
+  /api/v1/placements/openings/{id}/apply:
+    post:
+      tags: [Placements]
+      summary: Apply to a job opening (self-service)
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { studentId: { type: string } } } } } }
+      responses: { "201": { description: "Created, APPLIED" }, "409": { description: "CGPA_NOT_MET / DEADLINE_PASSED / ALREADY_APPLIED" } }
+  /api/v1/placements/applications:
+    get: { tags: [Placements], summary: "List applications (staff-tier only)", parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }, { name: jobOpeningId, in: query, schema: { type: string } }, { name: studentId, in: query, schema: { type: string } }, { name: status, in: query, schema: { type: string } }], responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } } }
+  /api/v1/placements/applications/mine:
+    get: { tags: [Placements], summary: "The caller's own applications", responses: { "200": { description: OK } } }
+  /api/v1/placements/applications/{id}/status:
+    put:
+      tags: [Placements]
+      summary: Update an application's status
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [status], properties: { status: { type: string, enum: [SHORTLISTED, INTERVIEW, SELECTED, REJECTED] }, notes: { type: string }, offeredCtc: { type: number } } }
+      responses: { "200": { description: OK }, "409": { description: "APPLICATION_FINALIZED" } }
+
+  /api/v1/billing/plans:
+    get:
+      tags: [Billing]
+      summary: "The global plan catalogue (FREE/PRO/ENTERPRISE, seeded)"
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Plan" } } } } } }
+  /api/v1/billing/subscription:
+    get:
+      tags: [Billing]
+      summary: The caller's own tenant's subscription
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Subscription" } } } }, "404": { $ref: "#/components/responses/NotFound" } }
+    put:
+      tags: [Billing]
+      summary: Create or change the caller's own tenant's subscription
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [planId], properties: { planId: { type: string } } } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Subscription" } } } } }
+  /api/v1/billing/subscription/cancel:
+    post:
+      tags: [Billing]
+      summary: "Cancel at period end (sets cancelAtPeriodEnd true)"
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Subscription" } } } } }
+  /api/v1/billing/invoices:
+    get:
+      tags: [Billing]
+      summary: List billing invoices
+      parameters: [{ $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }, { name: status, in: query, schema: { type: string, enum: [PENDING, PAID, OVERDUE] } }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Billing]
+      summary: "Create an invoice (amount defaults to the plan's priceMonthly)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [periodStart, periodEnd], properties: { amount: { type: integer }, periodStart: { type: string, format: date }, periodEnd: { type: string, format: date } } }
+      responses: { "201": { description: "Created, PENDING" } }
+  /api/v1/billing/invoices/{id}/pay:
+    post: { tags: [Billing], summary: Pay an invoice, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: ALREADY_PAID } } }
+  /api/v1/billing/usage:
+    get:
+      tags: [Billing]
+      summary: "Usage vs. the active plan's limits (computed on read)"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: { type: string, nullable: true }
+                  students: { type: object, properties: { used: { type: integer }, limit: { type: integer, nullable: true } } }
+                  faculty: { type: object, properties: { used: { type: integer }, limit: { type: integer, nullable: true } } }
+
+  /api/v1/api-keys:
+    get:
+      tags: [API Keys]
+      summary: List API keys (never the raw key or its hash)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/ApiKey" } }
+    post:
+      tags: [API Keys]
+      summary: "Create an API key — the raw key is returned exactly once"
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string, maxLength: 120 } } } } } }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: "#/components/schemas/ApiKey" }
+                  - type: object
+                    properties: { key: { type: string, description: "Raw secret — shown once" } }
+  /api/v1/api-keys/{id}:
+    delete: { tags: [API Keys], summary: "Revoke a key (stops authenticating immediately)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Revoked } } }
+
+  /api/v1/webhooks:
+    get: { tags: [Webhooks], summary: List webhook endpoints, responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/WebhookEndpoint" } } } } } } }
+    post:
+      tags: [Webhooks]
+      summary: Register a webhook endpoint
+      description: "Rejects a non-https, localhost, or private/link-local URL (SSRF guard) — see src/utils/ssrfGuard.ts."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url, eventTypes]
+              properties:
+                url: { type: string, format: uri, example: "https://example.com/webhooks/campusone" }
+                eventTypes: { type: array, items: { type: string, example: student.created } }
+                enabled: { type: boolean }
+      responses: { "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookEndpoint" } } } }, "400": { description: "SSRF check failed" } }
+  /api/v1/webhooks/{id}:
+    patch:
+      tags: [Webhooks]
+      summary: Update a webhook endpoint
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { url: { type: string }, eventTypes: { type: array, items: { type: string } }, enabled: { type: boolean } } } } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/WebhookEndpoint" } } } } }
+    delete: { tags: [Webhooks], summary: Delete a webhook endpoint, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } }
+  /api/v1/webhooks/{id}/deliveries:
+    get:
+      tags: [Webhooks]
+      summary: List delivery attempts for an endpoint
+      parameters: [{ $ref: "#/components/parameters/PathId" }, { $ref: "#/components/parameters/Page" }, { $ref: "#/components/parameters/PageSize" }]
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+
+  /api/v1/integrations:
+    get: { tags: [Integrations], summary: List configured integrations, responses: { "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/IntegrationConfig" } } } } } } }
+  /api/v1/integrations/{provider}:
+    put:
+      tags: [Integrations]
+      summary: "Enable/disable/configure a provider (config only — no live call)"
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/IntegrationProvider" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [enabled], properties: { enabled: { type: boolean }, settings: { type: object, additionalProperties: true } } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/IntegrationConfig" } } } } }
+
+  /api/v1/approvals:
+    get:
+      tags: [Approvals]
+      summary: List approval requests
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: status, in: query, schema: { type: string, enum: [PENDING, APPROVED, REJECTED] } }
+        - { name: type, in: query, schema: { type: string } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+    post:
+      tags: [Approvals]
+      summary: "Create an approval request (type is a free-form string a future module names)"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, entity, entityId]
+              properties: { type: { type: string }, entity: { type: string }, entityId: { type: string }, reason: { type: string } }
+      responses: { "201": { description: "Created, PENDING" } }
+  /api/v1/approvals/{id}/approve:
+    post:
+      tags: [Approvals]
+      summary: Approve a request
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { decisionNotes: { type: string } } } } } }
+      responses: { "200": { description: OK }, "409": { description: ALREADY_DECIDED } }
+  /api/v1/approvals/{id}/reject:
+    post:
+      tags: [Approvals]
+      summary: Reject a request
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { decisionNotes: { type: string } } } } } }
+      responses: { "200": { description: OK }, "409": { description: ALREADY_DECIDED } }
+
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: "List the caller's own notifications"
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: unreadOnly, in: query, schema: { type: boolean } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+  /api/v1/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Unread count
+      responses: { "200": { description: OK, content: { application/json: { schema: { type: object, properties: { count: { type: integer } } } } } } }
+  /api/v1/notifications/{id}/read:
+    post: { tags: [Notifications], summary: Mark one notification read, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: OK } } }
+  /api/v1/notifications/read-all:
+    post: { tags: [Notifications], summary: Mark every unread notification read, responses: { "204": { description: OK } } }
+  /api/v1/notifications/preferences:
+    get:
+      tags: [Notifications]
+      summary: "Channel preferences (IN_APP not listed — can't be disabled)"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, properties: { channel: { type: string, enum: [EMAIL, SMS, PUSH] }, enabled: { type: boolean } } } }
+  /api/v1/notifications/preferences/{channel}:
+    put:
+      tags: [Notifications]
+      summary: Set a channel preference
+      parameters: [{ name: channel, in: path, required: true, schema: { type: string, enum: [IN_APP, EMAIL, SMS, PUSH] } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [enabled], properties: { enabled: { type: boolean } } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, properties: { channel: { type: string }, enabled: { type: boolean } } } } } }
+        "400": { description: "channel IN_APP cannot be disabled" }
+
+  /api/v1/class-groups/{sectionId}/messages:
+    get:
+      tags: [Class Groups]
+      summary: List messages in a section's class group
+      parameters:
+        - { name: sectionId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } }
+        "403": { description: "Not a member of this section, and doesn't hold CLASS_GROUP_MANAGE" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Class Groups]
+      summary: Post a message (fans out an in-app notification to every other member)
+      parameters: [{ name: sectionId, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { type: object, required: [body], properties: { body: { type: string, maxLength: 2000 } } } }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { id: { type: string }, sectionId: { type: string }, body: { type: string }, createdAt: { type: string, format: date-time }, author: { type: object, properties: { id: { type: string }, name: { type: string } } } }
+        "403": { description: "Not a member of this section, and doesn't hold CLASS_GROUP_MANAGE" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Access token from POST /auth/login or /auth/refresh."
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: "Alternate credential — a key authenticates AS its creating user (see API Keys)."
+
+  parameters:
+    PathId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+    Search:
+      name: search
+      in: query
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: "Bad request — code BAD_REQUEST or a domain-specific code"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    Unauthorized:
+      description: "Missing/invalid/expired credential — code UNAUTHORIZED"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    Forbidden:
+      description: "Caller lacks the required permission, or the tenant lacks the module — code FORBIDDEN"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    NotFound:
+      description: "code NOT_FOUND"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    Conflict:
+      description: "A domain-specific conflict code (e.g. DUPLICATE_CODE, ALREADY_PAID)"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    ValidationError:
+      description: "code VALIDATION_ERROR — Zod rejected the request body"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    TooManyRequests:
+      description: "code TOO_MANY_REQUESTS — rate limit hit"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    PaginatedDepartments:
+      description: OK
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: "#/components/schemas/PaginatedMeta" }
+              - type: object
+                properties: { data: { type: array, items: { $ref: "#/components/schemas/Department" } } }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        message: { type: string, example: "Human-readable message" }
+        code: { type: string, example: BAD_REQUEST }
+        details: { type: object, additionalProperties: true, nullable: true }
+
+    PaginatedMeta:
+      type: object
+      properties:
+        meta:
+          type: object
+          properties:
+            page: { type: integer }
+            pageSize: { type: integer }
+            total: { type: integer }
+            totalPages: { type: integer }
+
+    PaginatedGeneric:
+      description: "Every list endpoint returns this shape — `data`'s item shape is the entity named in the route's summary."
+      allOf:
+        - { $ref: "#/components/schemas/PaginatedMeta" }
+        - type: object
+          properties: { data: { type: array, items: { type: object } } }
+
+    AuthUser:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        name: { type: string }
+        email: { type: string }
+        role: { type: string, example: SUPER_ADMIN }
+        isActive: { type: boolean }
+        mfaEnabled: { type: boolean }
+
+    AttendanceStatus:
+      type: string
+      enum: [PRESENT, ABSENT, LATE, EXCUSED, ON_LEAVE]
+
+    FeeCategory:
+      type: string
+      enum: [TUITION, HOSTEL, TRANSPORT, EXAM, LIBRARY, LAB, OTHER]
+
+    IntegrationProvider:
+      type: string
+      enum: [PAYMENT_GATEWAY, EMAIL, SMS, FIREBASE, GOOGLE_WORKSPACE, MICROSOFT_365, BIOMETRIC_ATTENDANCE, ACCOUNTING_SOFTWARE, LMS, LIBRARY_SYSTEM]
+
+    DepartmentInput:
+      type: object
+      required: [name, code, status]
+      properties:
+        name: { type: string }
+        code: { type: string, minLength: 2, maxLength: 12, description: "Uppercased" }
+        headOfDepartment: { type: string }
+        description: { type: string }
+        status: { type: string, enum: [ACTIVE, INACTIVE] }
+
+    Department:
+      allOf:
+        - { $ref: "#/components/schemas/DepartmentInput" }
+        - type: object
+          properties:
+            id: { type: string }
+            tenantId: { type: string }
+            facultyCount: { type: integer }
+            studentCount: { type: integer }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+
+    StudentInput:
+      type: object
+      required: [firstName, lastName, email, phone, rollNumber, departmentId, gender, dateOfBirth, admissionDate, status]
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        rollNumber: { type: string }
+        departmentId: { type: string }
+        sectionId: { type: string, nullable: true }
+        currentSemester: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        gender: { type: string, enum: [MALE, FEMALE, OTHER] }
+        dateOfBirth: { type: string, format: date }
+        admissionDate: { type: string, format: date }
+        status: { type: string, enum: [ACTIVE, INACTIVE, ALUMNI] }
+        guardianName: { type: string }
+        guardianPhone: { type: string }
+        address: { type: string }
+
+    Student:
+      allOf:
+        - { $ref: "#/components/schemas/StudentInput" }
+        - type: object
+          properties: { id: { type: string }, tenantId: { type: string }, createdAt: { type: string, format: date-time }, updatedAt: { type: string, format: date-time } }
+
+    Plan:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, example: PRO }
+        studentLimit: { type: integer }
+        facultyLimit: { type: integer }
+        priceMonthly: { type: number }
+        description: { type: string, nullable: true }
+
+    Subscription:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        planId: { type: string }
+        plan: { $ref: "#/components/schemas/Plan" }
+        status: { type: string, enum: [TRIALING, ACTIVE, PAST_DUE, CANCELED] }
+        currentPeriodStart: { type: string, format: date-time }
+        currentPeriodEnd: { type: string, format: date-time }
+        cancelAtPeriodEnd: { type: boolean }
+
+    ApiKey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        keyPrefix: { type: string, example: "cok_ee44e5fb" }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        createdBy: { type: object, properties: { id: { type: string }, name: { type: string }, email: { type: string } } }
+
+    WebhookEndpoint:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        url: { type: string, format: uri }
+        eventTypes: { type: array, items: { type: string } }
+        enabled: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    IntegrationConfig:
+      type: object
+      properties:
+        id: { type: string }
+        tenantId: { type: string }
+        provider: { $ref: "#/components/schemas/IntegrationProvider" }
+        enabled: { type: boolean }
+        settings: { type: object, additionalProperties: true, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }

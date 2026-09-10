@@ -24,6 +24,8 @@ npm run dev
 
 The API listens on `http://localhost:4000` by default. `GET /health`, `/health/live`, `/health/ready` are unversioned liveness/readiness checks.
 
+**Interactive API docs (Swagger UI):** `http://localhost:4000/api/docs` — every route below, live and "Try it out"-able (raw spec at `/api/docs.json`, source at `docs/openapi.yaml`). Log in via `POST /auth/login` first, click **Authorize**, and paste the `token` in as a Bearer token to try authenticated routes.
+
 ## API reference
 
 Everything below reflects the current Zod schemas and Prisma models exactly — see `*.schema.ts` in each module for the source of truth if this drifts. All routes are mounted under `/api/v1`.
