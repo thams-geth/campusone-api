@@ -50,7 +50,7 @@ All routes except `/health*`, `POST /api/v1/auth/login`, and `POST /api/v1/auth/
 
 - **Permissions, not hardcoded roles.** `Role`/`Permission`/`RolePermission`/`UserRole` are DB tables (`src/modules/rbac`) — every tenant is seeded with 10 system roles (`PLATFORM_ADMIN, SUPER_ADMIN, COLLEGE_ADMIN, DEPARTMENT_ADMIN, HOD, EXAM_ADMIN, FACULTY, STAFF, STUDENT, PARENT`) and default permission grants (`src/modules/rbac/permissions.ts`). Each route below is written as "requires permission `X`" — check that file for exactly which roles hold it today; that mapping can change without a route-code change.
   - **Gotcha:** seeding only happens at tenant creation (`seedTenantRoles`). If you extend the permission catalogue later, an *existing* tenant's roles don't automatically pick up the new grants — re-run `npm run prisma:seed` (idempotent — it re-syncs the demo tenant's grants via `skipDuplicates`) or call `seedTenantRoles(tenantId)` for any other existing tenant.
-- **Modules.** Each route is also gated to a `ModuleId` — `CORE`, `ACADEMICS` (Attendance, Assignments, Leave, Timetable), `EXAMINATION` (Exams/Marks/Results), `COMMUNICATION` (Announcements), `ADMISSIONS`, `FINANCE` (Fees), `HOSTEL_TRANSPORT` (Hostel + Transport), `LIBRARY`, or `PLACEMENT_ALUMNI` (Placements). `CORE` is always on; the others must be enabled per-tenant via a `TenantModule` row (no admin endpoint for this yet — see `enableModule` in `src/test/helpers.ts` for the shape, or set it directly). Only `HR_PAYROLL`, `COMPLIANCE_REPORTING`, and `INVENTORY_PROCUREMENT` remain unused, reserved for Release 4.
+- **Modules.** Each route is also gated to a `ModuleId` — `CORE`, `ACADEMICS` (Attendance, Assignments, Leave, Timetable), `EXAMINATION` (Exams/Marks/Results), `COMMUNICATION` (Announcements), `ADMISSIONS`, `FINANCE` (Fees), `HOSTEL_TRANSPORT` (Hostel + Transport), `LIBRARY`, or `PLACEMENT_ALUMNI` (Placements). `CORE` is always on; the others must be enabled per-tenant via a `TenantModule` row (no admin endpoint for this yet — see `enableModule` in `src/test/helpers.ts` for the shape, or set it directly). Release 4 (Billing, API Keys, Webhooks, Integrations, Approvals) is all `CORE`-gated — no new `ModuleId`s. `HR_PAYROLL`, `COMPLIANCE_REPORTING`, and `INVENTORY_PROCUREMENT` remain unused, reserved for future work beyond the current roadmap.
 
 ### Auth endpoints (`/api/v1/auth`)
 
@@ -58,16 +58,34 @@ All routes except `/health*`, `POST /api/v1/auth/login`, and `POST /api/v1/auth/
 
 | Route | Auth | Request body | Response |
 |---|---|---|---|
-| `POST /login` | none | `{ email, password }` | `200 { user: AuthUser, token }` + sets httpOnly `refreshToken` cookie |
+| `POST /login` | none | `{ email, password, mfaCode? }` | `200 { user: AuthUser, token }` + sets httpOnly `refreshToken` cookie |
 | `POST /refresh` | refresh cookie | — | `200 { token }`, rotates the cookie |
 | `POST /logout` | refresh cookie | — | `204` (no body), revokes + clears the cookie |
 | `GET /me` | Bearer token | — | `200 { user: AuthUser }` |
 
 ```ts
-AuthUser = { id, tenantId, name, email, role: string, isActive }
+AuthUser = { id, tenantId, name, email, role: string, isActive, mfaEnabled }
 ```
 
-Errors: `401` on bad credentials, an inactive account, a locked account, or an expired/reused refresh token; `429` once the rate limit is hit.
+Errors: `401` on bad credentials, an inactive account, a locked account, or an expired/reused refresh token; `429` once the rate limit is hit. If the account has MFA enabled, a missing/wrong `mfaCode` fails with `401 MFA_REQUIRED`/`MFA_INVALID` **before** any token is issued — no separate challenge-token step; the client just re-submits the same `POST /login` call with the code filled in.
+
+**MFA (TOTP, RFC 6238)** — `Authorization: Bearer` required for all of these:
+
+| Route | Request body | Response |
+|---|---|---|
+| `POST /mfa/setup` | — | `200 { secret, otpauthUri, recoveryCodes: string[] }` — replaces any previous pending setup; MFA isn't enabled yet |
+| `POST /mfa/enable` | `{ code }` | `204` — verifies the code against the pending secret first |
+| `POST /mfa/disable` | `{ code }` | `204` |
+
+`otpauthUri` is what a client renders as a QR code for an authenticator app. `recoveryCodes` are shown once — 10 one-time codes, any of which can substitute for a TOTP code at login (each is consumed on use). `400` if the code doesn't verify.
+
+**Sessions & login history** — a session *is* a `RefreshToken` row; no separate device model exists (so no device name, just `createdAt`/`expiresAt`):
+
+| Route | Response |
+|---|---|
+| `GET /sessions` | `200 [{ id, createdAt, expiresAt }]` — the caller's own non-revoked, non-expired sessions |
+| `DELETE /sessions/:id` | `204` — revokes one (e.g. "log out this device"); `404` if it isn't the caller's own |
+| `GET /login-history` | `200 [{ id, success, ipAddress, userAgent, createdAt }]` — the caller's own last 50 login attempts, success and failure |
 
 ### Departments (`/api/v1/departments`) — module `CORE`
 
@@ -371,6 +389,8 @@ Permission: `REPORTS_READ`. Read-only aggregations over existing data — no new
 | `GET /subject-performance` | `programId?` | `[{ subjectId, name, code, studentsAssessed, averageMarksPercentage }]` |
 | `GET /exam-results` | `examId` (required) | `{ examId, examName, totalAssessed, passCount, failCount, averagePercentage }` |
 | `GET /faculty-workload` | — | `[{ facultyId, name, subjectsAssigned, weeklyPeriods }]` |
+| `GET /financial-summary` | — | `{ totalInvoiced, totalCollected, totalOutstanding, byCategory: [{ category, invoiced, collected, outstanding }] }` — mirrors `fee.service.ts`'s own payable calculation; a `WAIVED` invoice owes nothing further regardless of face amount |
+| `GET /dropout` | — | `{ total, byDepartment: [{ departmentId, count }], students: [...] }` — the roadmap's "Dropout" report: students `INACTIVE` without ever reaching `ALUMNI`, i.e. left without graduating |
 
 ### Import / Export (`/api/v1/import-export`) — module `CORE`, Students only
 
@@ -494,6 +514,66 @@ Permissions: `PLACEMENT_READ`, `PLACEMENT_MANAGE`, `PLACEMENT_APPLY` (self-servi
 | `GET /applications/mine` | — | self-service |
 | `PUT /applications/:id/status` | `{ status: SHORTLISTED\|INTERVIEW\|SELECTED\|REJECTED, notes?, offeredCtc? }` | `200` — `409 APPLICATION_FINALIZED` once `SELECTED`/`REJECTED` |
 
+### Billing (`/api/v1/billing`) — module `CORE`
+
+Permissions: `BILLING_READ`, `BILLING_MANAGE` (SUPER_ADMIN/COLLEGE_ADMIN tier — platform-wide concern, not extended to department level). **An internal ledger, not a live payment gateway** — same reasoning as Fees. `Plan` is a global, seed-managed catalogue (`prisma/seed.ts` → `billing.seed.ts`); there's no tenant-facing plan-authoring endpoint, only a read-only catalogue, so no tenant admin can pollute a resource every other tenant sees.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /plans` | — | `200 Plan[]` — the global catalogue (FREE/PRO/ENTERPRISE, seeded) |
+| `GET /subscription` | — | `200 Subscription` (with `plan`) — `404` if the tenant hasn't set one |
+| `PUT /subscription` | `{ planId }` | `200 Subscription` — creates or changes the caller's **own** tenant's subscription only |
+| `POST /subscription/cancel` | — | `200 Subscription` — sets `cancelAtPeriodEnd: true` |
+| `GET /invoices` | query: `page?, pageSize?, status?` | `200` paginated `BillingInvoice[]` |
+| `POST /invoices` | `{ amount?, periodStart, periodEnd }` | `201 BillingInvoice`, `PENDING` — `amount` defaults to the plan's `priceMonthly` |
+| `POST /invoices/:id/pay` | — | `200` — `409 ALREADY_PAID` if already paid |
+| `GET /usage` | — | `200 { plan, students: { used, limit }, faculty: { used, limit } }` — computed on read against the active plan's limits, never stored |
+
+### API Keys (`/api/v1/api-keys`) — module `CORE`
+
+Permissions: `API_KEY_READ`, `API_KEY_MANAGE`. A key authenticates **as its creating user** — it inherits that user's exact tenantId/role/permissions rather than a separate scope system, so it reuses every existing `requirePermission` check as-is. Present it via `X-API-Key: <key>` instead of `Authorization: Bearer` on any route.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` | — | `200 [{ id, name, keyPrefix, lastUsedAt, revokedAt, createdAt, createdBy }]` — never the raw key or its hash |
+| `POST /` | `{ name }` | `201 { id, name, keyPrefix, createdAt, key }` — `key` is the raw secret, **returned exactly once**; only its SHA-256 hash is stored |
+| `DELETE /:id` | — | `204` — revokes; a revoked key stops authenticating immediately |
+
+### Webhooks (`/api/v1/webhooks`) — module `CORE`
+
+Permissions: `WEBHOOK_READ`, `WEBHOOK_MANAGE`. Delivery is a single inline HMAC-signed `fetch` at the moment an event fires — no retry queue yet (matching "no BullMQ until a module actually needs one"); `WebhookDelivery` is what a future queue-backed retry would read from. Tenant-supplied URLs get POSTed to by this server — a real SSRF vector — so every URL must be `https://`, non-localhost, and resolve to a public IP (`src/utils/ssrfGuard.ts`), checked both at registration **and** immediately before every delivery attempt (defends against DNS rebinding between the two).
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` | — | `200 WebhookEndpoint[]` |
+| `POST /` | `{ url, eventTypes: string[], enabled? }` | `201 WebhookEndpoint` — `400` if the URL fails the SSRF check |
+| `PATCH /:id` | `{ url?, eventTypes?, enabled? }` | `200 WebhookEndpoint` |
+| `DELETE /:id` | — | `204` |
+| `GET /:id/deliveries` | query: `page?, pageSize?` | `200` paginated `WebhookDelivery[]` |
+
+Each delivery POSTs `{ event, data }` with headers `X-Webhook-Event` and `X-Webhook-Signature` (HMAC-SHA256 of the body, keyed by the endpoint's per-registration `secret`). Currently fired from 3 representative call sites — student creation (`student.created`), admission enrollment (`admission.enrolled`), and a fee invoice becoming fully paid (`fee.invoice.paid`) — as a demonstration of the dispatcher, not a rewrite of every module.
+
+### Integrations (`/api/v1/integrations`) — module `CORE`
+
+Permissions: `INTEGRATION_READ`, `INTEGRATION_MANAGE`. **Config only — no code path here ever calls out to any of these providers.** Same "config exists, integration itself is future work" pattern as the Notifications deferral.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` | — | `200 IntegrationConfig[]` |
+| `PUT /:provider` | `{ enabled, settings? }` | `200 IntegrationConfig` — upsert; one row per `(tenant, provider)` |
+
+`provider: PAYMENT_GATEWAY \| EMAIL \| SMS \| FIREBASE \| GOOGLE_WORKSPACE \| MICROSOFT_365 \| BIOMETRIC_ATTENDANCE \| ACCOUNTING_SOFTWARE \| LMS \| LIBRARY_SYSTEM`. `settings` is plain JSON, not encrypted — a documented limitation (production would need a KMS-backed secret store), not an oversight.
+
+### Approvals (`/api/v1/approvals`) — module `CORE`
+
+Permissions: `APPROVAL_READ` (also granted to `STAFF`), `APPROVAL_MANAGE` (`DEPARTMENT_ADMIN`/`HOD` and up). A **minimal, generic** engine — deliberately not the roadmap's full Workflow/WorkflowStep pair, since no concrete multi-step chain exists yet to justify it. Available for the next new approval-shaped feature; the six existing per-module approval flows (attendance corrections, marks revisions, leave, admissions, fee waivers, document verification) are untouched and don't route through this.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` | query: `page?, pageSize?, status?, type?` | `200` paginated `ApprovalRequest[]` |
+| `POST /` | `{ type, entity, entityId, reason? }` | `201`, `PENDING` — `type` is a free-form string a future module names |
+| `POST /:id/approve` \| `/reject` | `{ decisionNotes? }` | `200` — `409 ALREADY_DECIDED` if not `PENDING` |
+
 ---
 
 If Postgres was already running from before `docker/init-app-role.sql` existed, that init script won't retroactively run on the existing volume — apply it by hand once:
@@ -528,7 +608,8 @@ src/
 │                 # institution, audit, dashboard, attendance, leave, assignments,
 │                 # examinations, announcements, documents, reports, import-export,
 │                 # admissions, fees, hostel, transport, library, certificates,
-│                 # activities, placements,
+│                 # activities, placements, billing, api-keys, webhooks, integrations,
+│                 # approvals,
 │                 # shared (audit-log writer + own-student/own-faculty resolvers)
 ├── prisma/       # Prisma client + extension, tenant context (AsyncLocalStorage)
 ├── utils/        # ApiError and other shared helpers
@@ -559,4 +640,7 @@ Tenant context flows: JWT → auth middleware sets `requestContext` (`AsyncLocal
 - Every request carries an `X-Request-ID` (caller-supplied or generated), echoed back on the response and attached to structured logs and audit log entries (`src/middleware/requestId.ts`).
 - CORS is locked to the configured frontend origin(s); `credentials: true` is required for the refresh-token cookie to work cross-origin in dev.
 - Rate limiting is applied globally, with a stricter limit on auth endpoints (login/refresh) to slow down credential-stuffing attempts. This is defense-in-depth, not a substitute for a proper WAF/edge rate limiter in production.
+- MFA is TOTP (RFC 6238) implemented from scratch over Node's built-in `crypto` (`src/utils/totp.ts`) — no new dependency. `User.mfaSecret` is stored in plaintext, not encrypted — a real, documented limitation (TOTP verification needs to recompute the HMAC, so it can't be hashed the way passwords are; production would need a KMS-backed secret store). Recovery codes are hashed like refresh tokens (SHA-256) and single-use.
+- API keys authenticate as their creating user (inheriting that user's tenant/role/permissions) and are stored the same way refresh tokens are — only a SHA-256 hash, never the raw key, with the raw key shown exactly once at creation.
+- Webhook endpoint URLs are checked against `src/utils/ssrfGuard.ts` (https-only, no localhost, no private/link-local IP ranges, checked via DNS resolution) both at registration and immediately before every delivery — tenant-supplied URLs POSTed to by this server are a real SSRF vector, not a hypothetical one.
 - `npm audit`: as of this writing, `prisma`'s CLI has unresolved advisories in its bundled MySQL driver and config-merging dependency (mysql2, deepmerge-ts) — these affect Prisma's dev-time CLI tooling, not the `@prisma/client` runtime library actually used by the running API, and we only use the Postgres driver. Re-check on each dependency bump.
