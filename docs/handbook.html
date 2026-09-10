@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CampusOne Handbook</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f5f6f1;
+    --paper-raised: #fbfbf8;
+    --ink: #1c232d;
+    --ink-soft: #4b5563;
+    --navy: #2b415f;
+    --navy-soft: #5a7196;
+    --seal: #b3812f;
+    --seal-soft: #d9b46b;
+    --rule: #dad5c3;
+    --rule-strong: #c3bda6;
+    --ok: #3f7d58;
+    --ok-bg: #e7f0ea;
+    --warn: #a85d2a;
+    --warn-bg: #f4e8dc;
+    --err: #a23b3b;
+    --err-bg: #f3e3e2;
+    --code-bg: #1c232d;
+    --code-ink: #e9e4d8;
+    --code-accent: #d9b46b;
+    --put-bg: #e2e8f4;
+    --shadow: 0 1px 2px rgba(28, 35, 45, 0.06), 0 6px 20px rgba(28, 35, 45, 0.05);
+    --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+    --font-body: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #12161c;
+      --paper-raised: #171c23;
+      --ink: #e9e4d8;
+      --ink-soft: #a9b0bb;
+      --navy: #8fa8cb;
+      --navy-soft: #6c85a8;
+      --seal: #d9b46b;
+      --seal-soft: #a3823f;
+      --rule: #2a313c;
+      --rule-strong: #3a4351;
+      --ok: #79c69a;
+      --ok-bg: #17261e;
+      --warn: #d69a5c;
+      --warn-bg: #2a2119;
+      --err: #e08585;
+      --err-bg: #2b1c1c;
+      --code-bg: #0c0f13;
+      --code-ink: #e9e4d8;
+      --code-accent: #d9b46b;
+      --put-bg: #223047;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    margin: 0;
+  }
+  h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; color: var(--ink); }
+  a { color: var(--navy); }
+  a:hover { color: var(--seal); }
+  code, pre, kbd { font-family: var(--font-mono); }
+  ::selection { background: var(--seal-soft); color: var(--ink); }
+  :focus-visible { outline: 2px solid var(--seal); outline-offset: 2px; }
+  img { max-width: 100%; }
+
+  .shell {
+    display: grid;
+    grid-template-columns: 264px minmax(0, 1fr);
+    max-width: 1240px;
+    margin: 0 auto;
+  }
+
+  /* ---- sidebar ---- */
+  .toc {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 2rem 1.25rem 2rem 1.75rem;
+    border-right: 1px solid var(--rule);
+  }
+  .toc .wordmark {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    font-weight: 600;
+    text-decoration: none;
+    margin-bottom: 0.15rem;
+  }
+  .toc .wordmark small {
+    display: block;
+    font-family: var(--font-body);
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-weight: 500;
+    margin-top: 0.2rem;
+  }
+  .toc nav { margin-top: 2rem; }
+  .toc ol { list-style: none; padding: 0; margin: 0; counter-reset: chapter; }
+  .toc > nav > ol > li { counter-increment: chapter; margin-bottom: 0.9rem; }
+  .toc > nav > ol > li > a {
+    display: flex;
+    gap: 0.6rem;
+    text-decoration: none;
+    color: var(--ink);
+    font-size: 0.92rem;
+    font-weight: 600;
+  }
+  .toc > nav > ol > li > a::before {
+    content: counter(chapter, decimal-leading-zero);
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--seal);
+    padding-top: 0.05rem;
+  }
+  .toc ol ol { margin: 0.4rem 0 0 1.7rem; }
+  .toc ol ol li { margin-bottom: 0.35rem; }
+  .toc ol ol a {
+    text-decoration: none;
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+  }
+  .toc ol ol a:hover { color: var(--seal); }
+  .toc-swagger {
+    margin-top: 2rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+  }
+  .toc-swagger code { font-size: 0.75rem; }
+
+  /* ---- main ---- */
+  main { padding: 3.5rem clamp(1.5rem, 4vw, 4rem) 6rem; min-width: 0; }
+  .measure { max-width: 68ch; }
+
+  .cover { margin-bottom: 3.5rem; }
+  .cover .eyebrow {
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--seal);
+    font-weight: 600;
+  }
+  .cover h1 { font-size: clamp(2.3rem, 4.2vw, 3.4rem); margin: 0.5rem 0 0.75rem; line-height: 1.05; }
+  .cover .lede { font-size: 1.1rem; color: var(--ink-soft); max-width: 62ch; }
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-top: 2rem;
+  }
+  .stat {
+    background: var(--paper-raised);
+    padding: 1.1rem 1.3rem;
+  }
+  .stat .n {
+    font-family: var(--font-display);
+    font-size: 1.9rem;
+    font-weight: 600;
+    display: block;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .label {
+    font-size: 0.76rem;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  section.chapter { margin-top: 4.5rem; padding-top: 0.5rem; scroll-margin-top: 1.5rem; }
+  section.chapter > .chapter-head { display: flex; align-items: baseline; gap: 0.9rem; margin-bottom: 1.6rem; }
+  section.chapter > .chapter-head .num {
+    font-family: var(--font-mono);
+    color: var(--seal);
+    font-size: 1rem;
+  }
+  section.chapter h2 { font-size: 1.85rem; margin: 0; }
+  section.chapter h3 { font-size: 1.25rem; margin: 2.2rem 0 0.9rem; scroll-margin-top: 1.5rem; }
+  section.chapter p { color: var(--ink); }
+  section.chapter p.note { color: var(--ink-soft); font-size: 0.94rem; }
+
+  .figure {
+    border: 1px solid var(--rule);
+    background: var(--paper-raised);
+    box-shadow: var(--shadow);
+    margin: 1.6rem 0 1.2rem;
+    overflow: hidden;
+  }
+  .figure .figure-body { padding: 1.4rem 1.4rem 0.6rem; overflow-x: auto; text-align: center; }
+  .figure .figure-body .mermaid { display: inline-block; }
+  .figure .figure-body svg { max-width: none !important; }
+  .figure figcaption {
+    border-top: 1px solid var(--rule);
+    padding: 0.7rem 1.4rem;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    text-align: left;
+  }
+  .figure figcaption b { color: var(--ink); }
+
+  .steps { list-style: none; padding: 0; margin: 1.5rem 0; counter-reset: step; }
+  .steps > li {
+    counter-increment: step;
+    position: relative;
+    padding: 0 0 1.6rem 3rem;
+    border-left: 1px solid var(--rule);
+    margin-left: 0.9rem;
+  }
+  .steps > li:last-child { border-left-color: transparent; padding-bottom: 0; }
+  .steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: -0.9rem;
+    top: 0;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 50%;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .steps h4 { margin: 0 0 0.4rem; font-family: var(--font-body); font-size: 1.02rem; font-weight: 700; }
+  .steps p { margin: 0 0 0.6rem; font-size: 0.94rem; color: var(--ink-soft); }
+
+  pre.code {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    font-size: 0.84rem;
+    line-height: 1.55;
+    border: 1px solid var(--rule-strong);
+  }
+  pre.code .c1 { color: #8a8f98; }
+  code.inline {
+    background: var(--paper-raised);
+    border: 1px solid var(--rule);
+    padding: 0.1rem 0.4rem;
+    font-size: 0.85em;
+    border-radius: 3px;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--rule); margin: 1.2rem 0; }
+  th { text-align: left; font-family: var(--font-body); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised); position: sticky; top: 0; }
+  td { padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td code.inline, th code.inline { white-space: nowrap; }
+
+  .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 3px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; font-family: var(--font-mono); }
+  .badge.gate { background: var(--navy); color: var(--paper); }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); }
+  .badge.err { background: var(--err-bg); color: var(--err); }
+
+  .callout {
+    border: 1px solid var(--rule-strong);
+    border-left: 3px solid var(--seal);
+    background: var(--paper-raised);
+    padding: 1rem 1.2rem;
+    margin: 1.4rem 0;
+    font-size: 0.92rem;
+  }
+  .callout b { color: var(--ink); }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; }
+  @media (max-width: 720px) { .two-col { grid-template-columns: 1fr; } }
+
+  footer.colophon {
+    margin-top: 5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.82rem;
+    color: var(--ink-soft);
+  }
+
+  /* mobile: collapse sidebar into an inline contents block */
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    .toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--rule); padding: 1.5rem; }
+    .toc nav { margin-top: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <aside class="toc">
+    <a class="wordmark" href="#top">CampusOne<small>Handbook</small></a>
+    <nav>
+      <ol>
+        <li><a href="#architecture">Architecture</a>
+          <ol>
+            <li><a href="#tenancy">Tenants &amp; RLS</a></li>
+            <li><a href="#rbac">Roles &amp; modules</a></li>
+          </ol>
+        </li>
+        <li><a href="#getting-started">Getting started</a></li>
+        <li><a href="#auth">Auth &amp; MFA</a></li>
+        <li><a href="#flows">Core flows</a>
+          <ol>
+            <li><a href="#flow-admissions">Admissions → enrollment</a></li>
+            <li><a href="#flow-attendance">Attendance lock &amp; correction</a></li>
+            <li><a href="#flow-fees">Fees ledger</a></li>
+            <li><a href="#flow-notifications">Notifications fan-out</a></li>
+            <li><a href="#flow-webhooks">Webhook delivery</a></li>
+          </ol>
+        </li>
+        <li><a href="#modules">Module reference</a></li>
+        <li><a href="#conventions">Conventions &amp; errors</a></li>
+      </ol>
+    </nav>
+    <div class="toc-swagger">
+      Full request/response reference for all 255 routes lives in the interactive spec at<br />
+      <code class="inline">/api/docs</code>
+    </div>
+  </aside>
+
+  <main id="top">
+    <div class="cover">
+      <div class="eyebrow">Backend Handbook · v1</div>
+      <h1>How CampusOne holds a college together</h1>
+      <p class="lede">
+        CampusOne is the backend for a multi-tenant college-management SaaS — one API, any number
+        of colleges, each seeing only its own students, faculty, and ledgers. This handbook is the
+        map: how a request finds its tenant, how a role becomes a permission, and how the five
+        flows that matter most actually move through the system.
+      </p>
+      <div class="stat-strip">
+        <div class="stat"><span class="n">38</span><span class="label">Modules</span></div>
+        <div class="stat"><span class="n">255</span><span class="label">Endpoints</span></div>
+        <div class="stat"><span class="n">10</span><span class="label">System roles</span></div>
+        <div class="stat"><span class="n">1</span><span class="label">DB, RLS-isolated</span></div>
+      </div>
+    </div>
+
+    <section class="chapter" id="architecture">
+      <div class="chapter-head"><span class="num">01</span><h2>Architecture</h2></div>
+      <p class="measure">
+        Every college that signs up is a <b>tenant</b>. There's one Postgres database and one schema —
+        not one database per college — so isolation has to be enforced by the database itself, not
+        just remembered in application code. That's the single decision everything else in this
+        handbook traces back to.
+      </p>
+
+      <h3 id="tenancy">Tenants &amp; Row-Level Security</h3>
+      <p class="measure">
+        Every table carries a <code class="inline">tenantId</code> column, and Postgres
+        <b>Row-Level Security</b> is the last line of defense — not an optional extra. A request's
+        JWT resolves to a tenant, that tenant id is carried through the request via
+        <code class="inline">AsyncLocalStorage</code>, and a Prisma client extension sets
+        <code class="inline">app.current_tenant</code> before every single query, inside the same
+        transaction as the query itself. A query that somehow runs with no tenant context set
+        doesn't silently see everything — it throws.
+      </p>
+      <div class="figure">
+        <div class="figure-body">
+<pre class="mermaid">
+flowchart LR
+  A["Client request"] --> B{"Authorization?"}
+  B -->|"Bearer JWT"| C["Verify JWT signature"]
+  B -->|"X-API-Key"| D["Look up key by SHA-256 hash"]
+  C --> E["Set request context:<br/>tenantId · userId · role"]
+  D --> E
+  E --> F{"Tenant has module<br/>enabled?"}
+  F -->|"no"| G["403 Forbidden"]
+  F -->|"yes"| H{"Role holds the<br/>route's permission?"}
+  H -->|"no"| G
+  H -->|"yes"| I["Route handler runs"]
+  I --> J["SET LOCAL app.current_tenant<br/>(same transaction as the query)"]
+  J --> K[("Postgres — RLS policy filters<br/>every row to this tenant")]
+</pre>
+        </div>
+        <figcaption><b>Fig. 1.</b> What happens between a request arriving and a row of data coming back. Module and permission checks are two separate gates — a tenant can hold a valid role for a feature it hasn't paid for.</figcaption>
+      </div>
+
+      <h3 id="rbac">Roles, permissions, and modules</h3>
+      <p class="measure">
+        Roles aren't a hardcoded enum — <code class="inline">Role</code>, <code class="inline">Permission</code>,
+        and <code class="inline">RolePermission</code> are ordinary database rows, seeded per tenant.
+        A route never checks <i>"is this user a HOD"</i> — it checks <i>"does this role hold
+        <code class="inline">STUDENT_READ</code>,"</i> which means the grants underneath a role name
+        can change without touching a single line of route code. Ten system roles ship by default,
+        from the cross-tenant <code class="inline">PLATFORM_ADMIN</code> down to
+        <code class="inline">STUDENT</code> and <code class="inline">PARENT</code>.
+      </p>
+      <p class="measure">
+        Orthogonal to roles: <b>modules</b>. <code class="inline">CORE</code> is always on; everything
+        else — <code class="inline">ACADEMICS</code>, <code class="inline">FINANCE</code>,
+        <code class="inline">HOSTEL_TRANSPORT</code>, and so on — is a row in
+        <code class="inline">TenantModule</code> a college can be sold, or not. A route checks both:
+        the module gate first, then the permission.
+      </p>
+    </section>
+
+    <section class="chapter" id="getting-started">
+      <div class="chapter-head"><span class="num">02</span><h2>Getting started</h2></div>
+      <p class="measure">Five steps stand between a fresh clone and your first authenticated call.</p>
+
+      <ol class="steps">
+        <li>
+          <h4>Bring up Postgres, Redis, and the schema</h4>
+          <p>Docker Compose creates the non-superuser <code class="inline">campusone_app</code> role RLS actually depends on.</p>
+<pre class="code">docker compose up -d
+npm install
+npm run prisma:migrate   <span class="c1"># applies the schema + RLS policies</span>
+npm run prisma:seed      <span class="c1"># permission catalogue + demo tenant/admin</span>
+npm run dev</pre>
+        </li>
+        <li>
+          <h4>Log in as the seeded demo admin</h4>
+          <p>Every tenant needs a resolvable email — that's why login looks a user up by email before it knows the tenant.</p>
+<pre class="code">curl -X POST http://localhost:4000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@demo-college.test","password":"Passw0rd!"}'
+
+<span class="c1"># 200 →</span>
+{ "user": { "role": "SUPER_ADMIN", "mfaEnabled": false, ... }, "token": "eyJhbGci..." }</pre>
+        </li>
+        <li>
+          <h4>Call an endpoint with the token</h4>
+          <p>Every list route returns the same envelope, so pagination works identically everywhere.</p>
+<pre class="code">curl http://localhost:4000/api/v1/departments \
+  -H "Authorization: Bearer $TOKEN"
+
+<span class="c1"># 200 →</span>
+{ "data": [ { "name": "Computer Science", "code": "CSE", ... } ],
+  "meta": { "page": 1, "pageSize": 10, "total": 4, "totalPages": 1 } }</pre>
+        </li>
+        <li>
+          <h4>Read an error the same way everywhere</h4>
+          <p>One shape for every non-2xx response — a machine code to branch on, a message to show.</p>
+<pre class="code">curl -X POST http://localhost:4000/api/v1/departments \
+  -H "Authorization: Bearer $TOKEN" -d '{"name":"CSE"}'
+
+<span class="c1"># 409 →</span>
+{ "message": "Code \"CSE\" is already in use.", "code": "DUPLICATE_CODE" }</pre>
+        </li>
+        <li>
+          <h4>Browse the rest interactively</h4>
+          <p>Everything past this point — all 38 modules — is documented request-by-request in Swagger.</p>
+<pre class="code">open http://localhost:4000/api/docs</pre>
+        </li>
+      </ol>
+    </section>
+
+    <section class="chapter" id="auth">
+      <div class="chapter-head"><span class="num">03</span><h2>Auth &amp; MFA</h2></div>
+      <p class="measure">
+        Access is a short-lived JWT; refresh is an opaque token in an httpOnly cookie, stored only
+        as a SHA-256 hash, rotating on every use. MFA is TOTP (RFC&nbsp;6238) — when it's on, a
+        missing or wrong code fails the <i>same</i> <code class="inline">POST /login</code> call
+        before any token is issued, rather than a separate challenge step.
+      </p>
+      <div class="figure">
+        <div class="figure-body">
+<pre class="mermaid">
+sequenceDiagram
+  participant C as Client
+  participant A as POST /auth/login
+  participant DB as Postgres
+
+  C->>A: email + password
+  A->>DB: find user by email (bootstrap — tenant not known yet)
+  DB-->>A: user row + tenantId
+  A->>A: bcrypt.compare(password, hash)
+  alt wrong password, 5th time
+    A-->>C: 429 — account locked 30s
+  else MFA enabled, no code yet
+    A-->>C: 401 MFA_REQUIRED
+    C->>A: same call again, + mfaCode
+    A->>A: verify TOTP (±1 step) or a recovery code
+  end
+  A->>DB: create RefreshToken (hash only)
+  A-->>C: 200 user + access token,<br/>Set-Cookie refreshToken (httpOnly)
+</pre>
+        </div>
+        <figcaption><b>Fig. 2.</b> The client never sees a separate "MFA challenge" resource — it just resubmits the login call with <code class="inline">mfaCode</code> filled in.</figcaption>
+      </div>
+      <div class="callout">
+        <b>API keys work differently on purpose.</b> An <code class="inline">X-API-Key</code> header
+        authenticates <i>as the user who created it</i> — same tenant, same role, same permission
+        checks — rather than carrying its own separate scope system. One less authorization model
+        to keep in sync.
+      </div>
+    </section>
+
+    <section class="chapter" id="flows">
+      <div class="chapter-head"><span class="num">04</span><h2>Core flows</h2></div>
+      <p class="measure">
+        Five flows that show the shape of the rest: a lifecycle that ends in a new row elsewhere in
+        the system, a ledger that recomputes itself, a state machine that refuses direct edits once
+        locked, and two ways data leaves the system — to a user's own notification list, and to a
+        URL the tenant supplied.
+      </p>
+
+      <h3 id="flow-admissions">Admissions → enrollment</h3>
+      <p class="measure">
+        An application steps forward one stage at a time through <code class="inline">/advance</code>.
+        <code class="inline">ENROLLED</code> is reachable only through its own endpoint — the one
+        action that actually creates a <code class="inline">Student</code> row, through the exact
+        same path a manual entry uses.
+      </p>
+      <div class="figure">
+        <div class="figure-body">
+<pre class="mermaid">
+flowchart LR
+  APPLIED --> DV["DOCUMENT_VERIFICATION"] --> SL["SHORTLISTED"] --> AP["APPROVED"] --> OF["OFFERED"] --> AC["ACCEPTED"]
+  AC -->|"POST /:id/enroll"| EN["ENROLLED<br/>+ Student row created"]
+  APPLIED -.->|"reject / withdraw, any stage"| RJ["REJECTED / WITHDRAWN"]
+</pre>
+        </div>
+        <figcaption><b>Fig. 3.</b> <code class="inline">/advance</code> only ever moves one step; only <code class="inline">/enroll</code> can reach <code class="inline">ENROLLED</code>.</figcaption>
+      </div>
+
+      <h3 id="flow-attendance">Attendance: lock, then only correct</h3>
+      <p class="measure">
+        The roadmap's own flagship example of "not just CRUD." Once a session is
+        <code class="inline">LOCKED</code>, a record can never be edited directly again — only
+        challenged with a correction request, which an approval turns into an audited before/after
+        change.
+      </p>
+      <div class="figure">
+        <div class="figure-body">
+<pre class="mermaid">
+flowchart LR
+  DR["DRAFT<br/>mark records"] -->|"submit"| SB["SUBMITTED"]
+  SB -->|"lock"| LK["LOCKED"]
+  LK -->|"POST /records/:id/correction"| PD["Correction: PENDING"]
+  PD -->|"approve"| UP["Record updated +<br/>before/after audit entry"]
+  PD -->|"reject"| LK
+</pre>
+        </div>
+        <figcaption><b>Fig. 4.</b> No route exists to edit a locked record directly — the correction workflow is the only door.</figcaption>
+      </div>
+
+      <h3 id="flow-fees">Fees: a recomputed ledger, not a stored balance</h3>
+      <p class="measure">
+        An invoice's <code class="inline">status</code> is never trusted as stored truth — it's
+        recomputed from every payment and adjustment on every write, the same way SGPA/CGPA are
+        computed on read elsewhere. A waiver is the one sticky manual override the recompute leaves
+        alone.
+      </p>
+      <div class="figure">
+        <div class="figure-body">
+<pre class="mermaid">
+flowchart TB
+  INV["FeeInvoice"] --> ADJ["Adjustments:<br/>DISCOUNT · SCHOLARSHIP · FINE"]
+  INV --> PAY["Payments recorded"]
+  ADJ --> CALC{"recompute payable<br/>vs. net paid"}
+  PAY --> CALC
+  CALC -->|"netPaid ≥ payable"| PD["PAID"]
+  CALC -->|"0 < netPaid < payable"| PT["PARTIAL"]
+  CALC -->|"netPaid = 0, past due"| OD["OVERDUE"]
+  CALC -->|"netPaid = 0"| PN["PENDING"]
+  WV["POST /invoices/:id/waive"] -.->|"sticky override,<br/>recompute skips it"| WD["WAIVED"]
+</pre>
+        </div>
+        <figcaption><b>Fig. 5.</b> An internal ledger by design — no live payment gateway is wired up, so payments are admin-recorded.</figcaption>
+      </div>
+
+      <h3 id="flow-notifications">Notifications: one real channel, two honest stubs</h3>
+      <p class="measure">
+        Three things fire a notification: an announcement going live, a class-group message, and a
+        BullMQ job that scans every tenant every 15 minutes for announcements about to expire.
+        <code class="inline">IN_APP</code> is always real. <code class="inline">EMAIL</code>,
+        <code class="inline">SMS</code>, and <code class="inline">PUSH</code> only even attempt a
+        delivery if the tenant has switched the matching integration on — and even then, nothing
+        actually sends; the delivery is logged <code class="inline">FAILED</code> with the reason
+        why, rather than pretending to succeed.
+      </p>
+      <div class="figure">
+        <div class="figure-body">
+<pre class="mermaid">
+flowchart LR
+  E1["Announcement published"] --> D["dispatchNotification()"]
+  E2["Class group message"] --> D
+  E3["BullMQ: expiry scan,<br/>every 15 min"] --> D
+  D --> IA["Notification row created<br/>= IN_APP delivered"]
+  D --> CK{"EMAIL / SMS / PUSH<br/>enabled for this tenant?"}
+  CK -->|"no"| SK["No delivery row"]
+  CK -->|"yes"| FL["NotificationDelivery: FAILED<br/>— config-only, reason recorded"]
+</pre>
+        </div>
+        <figcaption><b>Fig. 6.</b> A <code class="inline">FAILED</code> row with a reason beats a silent no-op — anyone querying deliveries sees exactly what didn't happen and why.</figcaption>
+      </div>
+
+      <h3 id="flow-webhooks">Webhooks: signed, and checked twice</h3>
+      <p class="measure">
+        A tenant-supplied URL that this server POSTs to is a real SSRF vector, not a hypothetical
+        one — so it's checked against <code class="inline">ssrfGuard</code> both when it's
+        registered <i>and</i> again immediately before every delivery, which is what actually
+        defends against DNS being rebound to a private address in between.
+      </p>
+      <div class="figure">
+        <div class="figure-body">
+<pre class="mermaid">
+sequenceDiagram
+  participant S as CampusOne
+  participant G as ssrfGuard
+  participant T as Tenant's URL
+
+  S->>G: assertPublicHttpsUrl() at registration
+  Note over S: later — an event fires<br/>(student.created, fee.invoice.paid, ...)
+  S->>G: assertPublicHttpsUrl() again — DNS may have changed
+  G-->>S: still public, still https
+  S->>T: POST { event, data }<br/>X-Webhook-Signature: HMAC-SHA256
+  T-->>S: 2xx or error
+  S->>S: WebhookDelivery row: DELIVERED or FAILED
+</pre>
+        </div>
+        <figcaption><b>Fig. 7.</b> No retry queue yet — one inline attempt per event, logged either way.</figcaption>
+      </div>
+    </section>
+
+    <section class="chapter" id="modules">
+      <div class="chapter-head"><span class="num">05</span><h2>Module reference</h2></div>
+      <p class="measure">
+        Every route sits behind two gates: a <span class="badge gate">MODULE</span> the tenant must
+        have enabled, and a permission the caller's role must hold. This is the index; full
+        request/response bodies are in Swagger.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Module</th><th>Gate</th><th>What it's for</th></tr></thead>
+          <tbody>
+            <tr><td>Departments</td><td><span class="badge gate">CORE</span></td><td>The academic org chart everything else hangs off.</td></tr>
+            <tr><td>Students</td><td><span class="badge gate">CORE</span></td><td>The core roster — profile, department, section, status.</td></tr>
+            <tr><td>Dashboard</td><td><span class="badge gate">CORE</span></td><td>Read-only summary counts, enrollment trend, activity feed.</td></tr>
+            <tr><td>Academic Years / Programs / Batches / Sections / Subjects</td><td><span class="badge gate">CORE</span></td><td>The hierarchy a student sits inside: year → program → batch → section → subject.</td></tr>
+            <tr><td>Faculty</td><td><span class="badge gate">CORE</span></td><td>Employee profile <i>and</i> login account, created together.</td></tr>
+            <tr><td>Rooms</td><td><span class="badge gate">CORE</span></td><td>Flat room catalogue — no building/floor hierarchy.</td></tr>
+            <tr><td>Timetable</td><td><span class="badge gate">ACADEMICS</span></td><td>Weekly schedule with faculty/room/section conflict detection.</td></tr>
+            <tr><td>Institution</td><td><span class="badge gate">CORE</span></td><td>Singleton tenant settings — name, brand color.</td></tr>
+            <tr><td>RBAC</td><td><span class="badge gate">CORE</span></td><td>Read roles/permissions; assign a user's role.</td></tr>
+            <tr><td>Audit Logs</td><td><span class="badge gate">CORE</span></td><td>Every mutation, written automatically, admin-only to read.</td></tr>
+            <tr><td>Attendance</td><td><span class="badge gate">ACADEMICS</span></td><td>Session lock + correction/approval — see Fig. 4.</td></tr>
+            <tr><td>Leave</td><td><span class="badge gate">ACADEMICS</span></td><td>Requests that, once approved, write back into Attendance.</td></tr>
+            <tr><td>Assignments</td><td><span class="badge gate">ACADEMICS</span></td><td>Draft → publish → close, with submissions and grading.</td></tr>
+            <tr><td>Examinations</td><td><span class="badge gate">EXAMINATION</span></td><td>Exam → schedule → marks (draft→submit→verify→publish) → SGPA/CGPA.</td></tr>
+            <tr><td>Announcements</td><td><span class="badge gate">COMMUNICATION</span></td><td>Scoped to college / department / program / batch / section — see Fig. 6.</td></tr>
+            <tr><td>Documents</td><td><span class="badge gate">CORE</span></td><td>Generic verified-document metadata (fileUrl is a reference, no upload).</td></tr>
+            <tr><td>Reports</td><td><span class="badge gate">CORE</span></td><td>Read-only aggregations — strength, attendance, performance, financials, dropout.</td></tr>
+            <tr><td>Import / Export</td><td><span class="badge gate">CORE</span></td><td>Student CSV — preview, commit, export.</td></tr>
+            <tr><td>Admissions</td><td><span class="badge gate">ADMISSIONS</span></td><td>Applicant lifecycle through enrollment — see Fig. 3.</td></tr>
+            <tr><td>Fees</td><td><span class="badge gate">FINANCE</span></td><td>Internal invoicing ledger — see Fig. 5.</td></tr>
+            <tr><td>Hostel / Transport</td><td><span class="badge gate">HOSTEL_TRANSPORT</span></td><td>Room and route allocation, with capacity checks.</td></tr>
+            <tr><td>Library</td><td><span class="badge gate">LIBRARY</span></td><td>Issue/return with computed late fines.</td></tr>
+            <tr><td>Certificates</td><td><span class="badge gate">CORE</span></td><td>Issuance workflow with a publicly verifiable code.</td></tr>
+            <tr><td>Activities</td><td><span class="badge gate">CORE</span></td><td>Achievements, events, clubs — student self-reported or staff-logged.</td></tr>
+            <tr><td>Placements</td><td><span class="badge gate">PLACEMENT_ALUMNI</span></td><td>Companies → openings → applications, CGPA-gated.</td></tr>
+            <tr><td>Billing</td><td><span class="badge gate">CORE</span></td><td>The tenant's own subscription against a seeded plan catalogue.</td></tr>
+            <tr><td>API Keys</td><td><span class="badge gate">CORE</span></td><td>Authenticate as their creator — see §3.</td></tr>
+            <tr><td>Webhooks</td><td><span class="badge gate">CORE</span></td><td>SSRF-guarded, signed outbound events — see Fig. 7.</td></tr>
+            <tr><td>Integrations</td><td><span class="badge gate">CORE</span></td><td>Config only — enabling one never places a live call.</td></tr>
+            <tr><td>Approvals</td><td><span class="badge gate">CORE</span></td><td>A minimal generic approve/reject primitive for future features.</td></tr>
+            <tr><td>Notifications</td><td><span class="badge gate">CORE</span></td><td>Self-account inbox — see Fig. 6.</td></tr>
+            <tr><td>Class Groups</td><td><span class="badge gate">CORE</span></td><td>Every Section's own message board — membership derived, not stored.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="chapter" id="conventions">
+      <div class="chapter-head"><span class="num">06</span><h2>Conventions &amp; errors</h2></div>
+      <div class="two-col">
+        <div>
+          <h3>Every list looks the same</h3>
+          <pre class="code">{
+  "data": [ ],
+  "meta": {
+    "page": 1, "pageSize": 10,
+    "total": 42, "totalPages": 5
+  }
+}</pre>
+        </div>
+        <div>
+          <h3>Every error looks the same</h3>
+          <pre class="code">{
+  "message": "Human-readable",
+  "code": "DUPLICATE_CODE",
+  "details": { }
+}</pre>
+        </div>
+      </div>
+      <h3>Status codes in practice</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>Meaning here</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge err">401</span></td><td>Bad credentials, expired session, or — distinctly — <code class="inline">MFA_REQUIRED</code> / <code class="inline">MFA_INVALID</code>.</td></tr>
+            <tr><td><span class="badge err">403</span></td><td>A module name in the message means the tenant hasn't enabled it; otherwise it's a permission gap.</td></tr>
+            <tr><td><span class="badge warn">409</span></td><td>A domain conflict — <code class="inline">DUPLICATE_CODE</code>, <code class="inline">ALREADY_PAID</code>, <code class="inline">ROOM_FULL</code>, and so on, one per module.</td></tr>
+            <tr><td><span class="badge warn">422</span></td><td><code class="inline">VALIDATION_ERROR</code> — Zod rejected the body before it reached any business logic. <code class="inline">details</code> is a field → messages map.</td></tr>
+            <tr><td><span class="badge ok">429</span></td><td>Rate limit — tighter on <code class="inline">/auth/login</code> and <code class="inline">/auth/refresh</code> specifically.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="colophon">
+      Generated from the live route set and Zod schemas in this repo. The source of truth is
+      <code class="inline">docs/openapi.yaml</code> (served at <code class="inline">/api/docs</code>) and
+      <code class="inline">README.md</code> — if this page and either of those ever disagree, they win.
+      Diagrams render via <a href="https://mermaid.js.org" target="_blank" rel="noopener">Mermaid</a>,
+      loaded from cdnjs — open this file with internet access, or over <code class="inline">npx serve docs</code>
+      rather than a bare double-click, for the diagrams to load reliably in every browser.
+    </footer>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'neutral',
+    securityLevel: 'loose',
+    fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
+    flowchart: { useMaxWidth: false },
+    sequence: { useMaxWidth: false },
+  });
+</script>
+</body>
+</html>

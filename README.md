@@ -26,7 +26,7 @@ The API listens on `http://localhost:4000` by default. `GET /health`, `/health/l
 
 **Interactive API docs (Swagger UI):** `http://localhost:4000/api/docs` — every route below, live and "Try it out"-able (raw spec at `/api/docs.json`, source at `docs/openapi.yaml`). Log in via `POST /auth/login` first, click **Authorize**, and paste the `token` in as a Bearer token to try authenticated routes.
 
-**Architecture &amp; flow diagrams:** [`docs/HANDBOOK.md`](docs/HANDBOOK.md) — how a request finds its tenant, the auth/MFA sequence, and the core domain flows (admissions → enrollment, attendance lock/correction, the fees ledger, notification fan-out, webhook delivery) as Mermaid diagrams that render directly on GitHub.
+**Architecture &amp; flow diagrams:** [`docs/handbook.html`](docs/handbook.html) — how a request finds its tenant, the auth/MFA sequence, and the core domain flows (admissions → enrollment, attendance lock/correction, the fees ledger, notification fan-out, webhook delivery) as diagrams. Open it directly in a browser (needs internet access once, to load fonts + the Mermaid renderer from a CDN — `npx serve docs` also works if a bare double-click doesn't load them).
 
 ## API reference
 
