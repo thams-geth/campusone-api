@@ -1,6 +1,7 @@
 import { ApiError } from '../../utils/ApiError'
 import { prisma } from '../../prisma/client'
 import { logActivity } from '../shared/activityLog'
+import { triggerWebhooks } from '../webhooks/webhookDispatcher'
 import type { ListStudentsQuery, StudentInput } from './student.schema'
 
 export async function listStudents(params: ListStudentsQuery) {
@@ -103,6 +104,7 @@ export async function createStudent(tenantId: string, input: StudentInput) {
     },
   })
   await logActivity(`added a new student to ${department.code}`, { entity: 'Student', entityId: student.id, action: 'CREATE' })
+  await triggerWebhooks(tenantId, 'student.created', { id: student.id, rollNumber: student.rollNumber, departmentId: student.departmentId })
   return student
 }
 

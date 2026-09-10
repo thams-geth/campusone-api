@@ -2,6 +2,7 @@ import type { AdmissionStatus } from '@prisma/client'
 import { ApiError } from '../../utils/ApiError'
 import { prisma } from '../../prisma/client'
 import { logActivity } from '../shared/activityLog'
+import { triggerWebhooks } from '../webhooks/webhookDispatcher'
 import { createStudent } from '../students/student.service'
 import type {
   AdmissionApplicationInput,
@@ -149,5 +150,6 @@ export async function enrollApplication(tenantId: string, id: string, input: Enr
     entityId: id,
     action: 'ENROLL',
   })
+  await triggerWebhooks(tenantId, 'admission.enrolled', { applicationId: id, studentId: student.id })
   return { ...student, admissionApplicationId: id }
 }

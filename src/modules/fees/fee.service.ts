@@ -2,6 +2,7 @@ import type { FeeInvoiceStatus } from '@prisma/client'
 import { ApiError } from '../../utils/ApiError'
 import { prisma } from '../../prisma/client'
 import { logActivity } from '../shared/activityLog'
+import { triggerWebhooks } from '../webhooks/webhookDispatcher'
 import { resolveOwnStudentId } from '../shared/studentContext'
 import type {
   FeeAdjustmentInput,
@@ -144,8 +145,11 @@ export async function recordPayment(invoiceId: string, recordedByUserId: string,
   const payment = await prisma.payment.create({
     data: { tenantId: invoice.tenantId, invoiceId, recordedByUserId, ...input },
   })
-  await recomputeInvoiceStatus(invoiceId)
+  const updatedInvoice = await recomputeInvoiceStatus(invoiceId)
   await logActivity(`recorded a payment of ${input.amount}`, { entity: 'Payment', entityId: payment.id, action: 'CREATE' })
+  if (updatedInvoice.status === 'PAID') {
+    await triggerWebhooks(invoice.tenantId, 'fee.invoice.paid', { invoiceId, amount: input.amount })
+  }
   return payment
 }
 
