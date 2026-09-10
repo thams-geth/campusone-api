@@ -1,6 +1,7 @@
 import { ApiError } from '../../utils/ApiError'
 import { prisma } from '../../prisma/client'
 import { logActivity } from '../shared/activityLog'
+import { dispatchNotification, resolveAudienceUserIds } from '../notifications/notification.service'
 import type { AnnouncementInput, ListAnnouncementsQuery } from './announcement.schema'
 
 export async function listAnnouncements(params: ListAnnouncementsQuery) {
@@ -43,6 +44,24 @@ export async function createAnnouncement(tenantId: string, authorUserId: string,
     entityId: announcement.id,
     action: 'CREATE',
   })
+
+  // Only notify for announcements that are live now — a future-dated
+  // publishAt has no separate "it just went live" job to catch it
+  // later, same scope boundary as the reminder job only scanning what
+  // already exists (not a full scheduler).
+  if (announcement.publishAt <= new Date()) {
+    const recipients = (await resolveAudienceUserIds(announcement)).filter((id) => id !== authorUserId)
+    await dispatchNotification({
+      tenantId,
+      userIds: recipients,
+      type: 'ANNOUNCEMENT_PUBLISHED',
+      title: announcement.title,
+      body: announcement.content.length > 200 ? `${announcement.content.slice(0, 197)}...` : announcement.content,
+      entity: 'Announcement',
+      entityId: announcement.id,
+    })
+  }
+
   return announcement
 }
 
