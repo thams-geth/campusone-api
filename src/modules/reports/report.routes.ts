@@ -13,3 +13,5 @@ reportsRouter.get('/department-performance', reportController.departmentPerforma
 reportsRouter.get('/subject-performance', reportController.subjectPerformance)
 reportsRouter.get('/exam-results', reportController.examResults)
 reportsRouter.get('/faculty-workload', reportController.facultyWorkload)
+reportsRouter.get('/financial-summary', reportController.financialSummary)
+reportsRouter.get('/dropout', reportController.dropout)

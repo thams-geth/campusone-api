@@ -34,3 +34,11 @@ export async function examResults(req: Request, res: Response) {
 export async function facultyWorkload(_req: Request, res: Response) {
   res.json(await reportService.facultyWorkload())
 }
+
+export async function financialSummary(_req: Request, res: Response) {
+  res.json(await reportService.financialSummary())
+}
+
+export async function dropout(_req: Request, res: Response) {
+  res.json(await reportService.dropoutReport())
+}

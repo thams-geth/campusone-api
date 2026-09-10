@@ -124,6 +124,61 @@ export async function examResults(params: ExamResultsQuery) {
   }
 }
 
+/** Mirrors fee.service.ts's recomputeInvoiceStatus payable calculation — a WAIVED invoice owes nothing further regardless of its face amount. */
+export async function financialSummary() {
+  const invoices = await prisma.feeInvoice.findMany({ include: { adjustments: true, payments: true } })
+
+  const byCategory = new Map<string, { invoiced: number; collected: number }>()
+  let totalInvoiced = 0
+  let totalCollected = 0
+
+  for (const invoice of invoices) {
+    const netPaid = invoice.payments.reduce((sum, p) => sum + (p.isRefund ? -p.amount : p.amount), 0)
+    const adjustmentDelta = invoice.adjustments.reduce((sum, a) => (a.type === 'FINE' ? sum + a.amount : sum - a.amount), 0)
+    const payable = invoice.status === 'WAIVED' ? netPaid : Math.max(0, invoice.amount + adjustmentDelta)
+
+    totalInvoiced += payable
+    totalCollected += netPaid
+
+    const bucket = byCategory.get(invoice.category) ?? { invoiced: 0, collected: 0 }
+    bucket.invoiced += payable
+    bucket.collected += netPaid
+    byCategory.set(invoice.category, bucket)
+  }
+
+  return {
+    totalInvoiced,
+    totalCollected,
+    totalOutstanding: Math.max(0, totalInvoiced - totalCollected),
+    byCategory: Array.from(byCategory.entries()).map(([category, v]) => ({
+      category,
+      invoiced: v.invoiced,
+      collected: v.collected,
+      outstanding: Math.max(0, v.invoiced - v.collected),
+    })),
+  }
+}
+
+/** "Dropout" per the roadmap: INACTIVE without ever reaching ALUMNI — i.e. left without graduating. */
+export async function dropoutReport() {
+  const students = await prisma.student.findMany({
+    where: { status: 'INACTIVE' },
+    select: { id: true, firstName: true, lastName: true, rollNumber: true, departmentId: true },
+    orderBy: { rollNumber: 'asc' },
+  })
+  const byDepartment = await prisma.student.groupBy({
+    by: ['departmentId'],
+    where: { status: 'INACTIVE' },
+    _count: { _all: true },
+  })
+
+  return {
+    total: students.length,
+    byDepartment: byDepartment.map((row) => ({ departmentId: row.departmentId, count: row._count._all })),
+    students,
+  }
+}
+
 export async function facultyWorkload() {
   const facultyList = await prisma.faculty.findMany({
     where: { status: 'ACTIVE' },
