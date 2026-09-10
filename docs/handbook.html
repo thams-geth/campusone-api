@@ -209,6 +209,7 @@
   .figure .figure-body { padding: 1.4rem 1.4rem 0.6rem; overflow-x: auto; text-align: center; }
   .figure .figure-body .mermaid { display: inline-block; }
   .figure .figure-body svg { max-width: none !important; }
+  .figure .figure-body pre.code { text-align: left; }
   .figure figcaption {
     border-top: 1px solid var(--rule);
     padding: 0.7rem 1.4rem;
@@ -265,6 +266,12 @@
   }
 
   table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  td { overflow-wrap: break-word; word-break: break-word; }
+  table.roles-table { table-layout: fixed; }
+  table.roles-table th:nth-child(1), table.roles-table td:nth-child(1) { width: 15%; }
+  table.roles-table th:nth-child(2), table.roles-table td:nth-child(2) { width: 17%; }
+  table.roles-table th:nth-child(3), table.roles-table td:nth-child(3) { width: 38%; }
+  table.roles-table th:nth-child(4), table.roles-table td:nth-child(4) { width: 30%; }
   .table-wrap { overflow-x: auto; border: 1px solid var(--rule); margin: 1.2rem 0; }
   th { text-align: left; font-family: var(--font-body); font-weight: 700; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft); padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--rule-strong); background: var(--paper-raised); position: sticky; top: 0; }
   td { padding: 0.65rem 0.9rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
@@ -321,6 +328,7 @@
         </li>
         <li><a href="#getting-started">Getting started</a></li>
         <li><a href="#auth">Auth &amp; MFA</a></li>
+        <li><a href="#roles">Using the API by role</a></li>
         <li><a href="#flows">Core flows</a>
           <ol>
             <li><a href="#flow-admissions">Admissions → enrollment</a></li>
@@ -509,8 +517,121 @@ sequenceDiagram
       </div>
     </section>
 
+    <section class="chapter" id="roles">
+      <div class="chapter-head"><span class="num">04</span><h2>Using the API by role</h2></div>
+      <p class="measure">
+        Every route is gated by a permission, and every permission maps to a set of roles — but that
+        mapping is <b>data</b> (<code class="inline">Role</code>/<code class="inline">RolePermission</code>
+        rows, see §1), not a hardcoded switch statement. What follows is what the <i>default</i> seed
+        grants each of the ten system roles today; a tenant's actual grants can diverge if an admin
+        edits them via <code class="inline">POST /users/:id/role</code> and the RBAC tables.
+      </p>
+
+      <div class="table-wrap">
+        <table class="roles-table">
+          <thead><tr><th>Role</th><th>Who they are</th><th>What they can do</th><th>Notably can't</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="badge gate">SUPER_ADMIN</span><br/><span class="badge gate">COLLEGE_ADMIN</span></td>
+              <td>The college's own IT/ops owner.</td>
+              <td>Everything. Every permission key, unconditionally — including Billing, API Keys, Webhooks, Integrations, and RBAC itself.</td>
+              <td>Nothing, within their own tenant. (<code class="inline">PLATFORM_ADMIN</code> is the one cross-tenant role above these — not tenant-created, seeded globally.)</td>
+            </tr>
+            <tr>
+              <td><span class="badge gate">DEPARTMENT_ADMIN</span><br/><span class="badge gate">HOD</span></td>
+              <td>Runs a department day-to-day.</td>
+              <td>Full CRUD on the academic structure, all of Academic Management and College Operations, approvals, class groups for any section. Effectively "everything except platform-tier."</td>
+              <td>Billing, API Keys, Webhooks, Integrations — deliberately kept to SUPER_ADMIN/COLLEGE_ADMIN. Not code-restricted to their <i>own</i> department either — the grant is tenant-wide, same as every role here.</td>
+            </tr>
+            <tr>
+              <td><span class="badge gate">EXAM_ADMIN</span></td>
+              <td>Runs the examination cycle.</td>
+              <td>Create/manage exams and schedules, verify/publish/revise marks, read reports.</td>
+              <td>Can't <i>enter</i> marks (that's <code class="inline">MARKS_ENTER</code>, a Faculty grant) — only verify/publish what's already entered.</td>
+            </tr>
+            <tr>
+              <td><span class="badge gate">FACULTY</span></td>
+              <td>Teaches; owns a login provisioned at creation.</td>
+              <td>Mark/edit attendance, approve leave, manage &amp; grade assignments, enter marks, post announcements &amp; verify documents, log any student's activity, post in class groups for sections they teach.</td>
+              <td>Read-only on the academic structure itself (can't create a Program or Section) — and can't verify/publish marks, only enter them.</td>
+            </tr>
+            <tr>
+              <td><span class="badge gate">STAFF</span></td>
+              <td>Front-desk / operations — admissions intake, fees, hostel, transport, library.</td>
+              <td>Create admission applications, record payments, manage hostel/transport/library day-to-day, issue certificates, manage documents.</td>
+              <td>No academic-management writes (can't mark attendance or grade), no admission <i>decisions</i> (advance/reject/enroll is committee-level, Department Admin+ only).</td>
+            </tr>
+            <tr>
+              <td><span class="badge gate">STUDENT</span></td>
+              <td>Self-service only — every route resolves to their own linked profile.</td>
+              <td>View own attendance/marks/results/fees/documents/allocations, request leave, submit assignments, apply to placements, request certificates, self-report activities, read &amp; post in their own class group.</td>
+              <td>Everything is read-only except the handful of "do my own part" actions listed — no visibility into other students' data.</td>
+            </tr>
+            <tr>
+              <td><span class="badge gate">PARENT</span></td>
+              <td>Reserved for the roadmap's Parent Portal.</td>
+              <td>Nothing yet — seeded with zero grants.</td>
+              <td>The whole role. Not built (would need a Student-to-Parent link model first).</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>The self-service pattern, worked through</h3>
+      <p class="measure">
+        A student calling <code class="inline">GET /attendance/student/:studentId</code> doesn't
+        know their own <code class="inline">Student.id</code> — they only have their login. Routes
+        built for self-service come in two shapes, and it matters which one a given route is —
+        Swagger states it per-route, but the shapes are: a dedicated <code class="inline">/mine</code>
+        route that takes no id at all, or a create/query route where the id is an <b>optional</b>
+        field (body or query) — pass one and staff can act on someone's behalf; omit it and it
+        resolves the caller's own linked profile instead. A handful of staff-oriented reads
+        (<code class="inline">/attendance/student/:studentId</code>,
+        <code class="inline">/leave/balance/:studentId</code>) take a <i>required</i> path id with no
+        self-resolution at all — a student holds the read permission for these in principle, but has
+        no route to look up their own <code class="inline">Student.id</code> to call them, so treat
+        those two as staff/faculty tools today, not student self-service.
+      </p>
+      <div class="figure">
+        <div class="figure-body">
+<pre class="code"><span class="c1"># Dedicated self-service routes — no id, ever</span>
+curl http://localhost:4000/api/v1/fees/invoices/mine \
+  -H "Authorization: Bearer $STUDENT_TOKEN"
+
+<span class="c1"># Optional query param — omitted, resolves to the caller's own Student row</span>
+curl http://localhost:4000/api/v1/examinations/results/cgpa \
+  -H "Authorization: Bearer $STUDENT_TOKEN"
+<span class="c1"># staff/faculty pass ?studentId=... on the same route to check anyone's</span>
+
+<span class="c1"># Optional body field — a student requesting their own leave</span>
+curl -X POST http://localhost:4000/api/v1/leave/requests \
+  -H "Authorization: Bearer $STUDENT_TOKEN" \
+  -d '{"leaveTypeId":"lt_1","startDate":"2026-03-10","endDate":"2026-03-12","reason":"Family event"}'
+
+<span class="c1"># Same route, staff filing it FOR a student — one extra field, nothing else changes</span>
+curl -X POST http://localhost:4000/api/v1/leave/requests \
+  -H "Authorization: Bearer $STAFF_TOKEN" \
+  -d '{"leaveTypeId":"lt_1","startDate":"2026-03-10","endDate":"2026-03-12","reason":"Family event","studentId":"stu_9f2a"}'
+
+<span class="c1"># Staff recording a fee payment against an invoice</span>
+curl -X POST http://localhost:4000/api/v1/fees/invoices/inv_7c1/payments \
+  -H "Authorization: Bearer $STAFF_TOKEN" \
+  -d '{"amount":15000,"method":"CASH"}'
+
+<span class="c1"># Admin: provision a department, then hand a user the HOD role</span>
+curl -X POST http://localhost:4000/api/v1/departments \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -d '{"name":"Computer Science","code":"CSE","status":"ACTIVE"}'
+curl -X POST http://localhost:4000/api/v1/users/usr_4b1/role \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -d '{"roleName":"HOD"}'</pre>
+        </div>
+        <figcaption><b>Fig. 8.</b> The resolver behind the optional-id shape is <code class="inline">resolveOwnStudentId</code> (<code class="inline">src/modules/shared/studentContext.ts</code>) — same function on both sides of the door, not two different endpoints.</figcaption>
+      </div>
+    </section>
+
     <section class="chapter" id="flows">
-      <div class="chapter-head"><span class="num">04</span><h2>Core flows</h2></div>
+      <div class="chapter-head"><span class="num">05</span><h2>Core flows</h2></div>
       <p class="measure">
         Five flows that show the shape of the rest: a lifecycle that ends in a new row elsewhere in
         the system, a ledger that recomputes itself, a state machine that refuses direct edits once
@@ -638,7 +759,7 @@ sequenceDiagram
     </section>
 
     <section class="chapter" id="modules">
-      <div class="chapter-head"><span class="num">05</span><h2>Module reference</h2></div>
+      <div class="chapter-head"><span class="num">06</span><h2>Module reference</h2></div>
       <p class="measure">
         Every route sits behind two gates: a <span class="badge gate">MODULE</span> the tenant must
         have enabled, and a permission the caller's role must hold. This is the index; full
@@ -686,7 +807,7 @@ sequenceDiagram
     </section>
 
     <section class="chapter" id="conventions">
-      <div class="chapter-head"><span class="num">06</span><h2>Conventions &amp; errors</h2></div>
+      <div class="chapter-head"><span class="num">07</span><h2>Conventions &amp; errors</h2></div>
       <div class="two-col">
         <div>
           <h3>Every list looks the same</h3>
