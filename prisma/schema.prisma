@@ -249,6 +249,15 @@ model Tenant {
   companies             Company[]
   jobOpenings           JobOpening[]
   placementApplications PlacementApplication[]
+  subscription          Subscription?
+  billingInvoices       BillingInvoice[]
+  mfaRecoveryCodes      MfaRecoveryCode[]
+  loginHistory          LoginHistory[]
+  apiKeys               ApiKey[]
+  webhookEndpoints      WebhookEndpoint[]
+  webhookDeliveries     WebhookDelivery[]
+  integrationConfigs    IntegrationConfig[]
+  approvalRequests      ApprovalRequest[]
 }
 
 // tenant_modules: which modules a tenant has installed/enabled, and at
@@ -343,6 +352,12 @@ model User {
   isActive            Boolean   @default(true)
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
+  // TOTP secret — plaintext, not hashed: verification needs to
+  // recompute the HMAC, which a one-way hash can't support. A real
+  // limitation for now (production would encrypt at rest via a KMS);
+  // protected today by tenant RLS + auth same as everything else.
+  mfaSecret           String?
+  mfaEnabled          Boolean   @default(false)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -366,6 +381,11 @@ model User {
   feeAdjustmentsCreated          FeeAdjustment[]        @relation("FeeAdjustmentCreatedBy")
   paymentsRecorded               Payment[]              @relation("PaymentRecordedBy")
   certificatesIssued             CertificateRequest[]   @relation("CertificateIssuedBy")
+  mfaRecoveryCodes               MfaRecoveryCode[]
+  loginHistory                   LoginHistory[]
+  apiKeysCreated                 ApiKey[]
+  approvalRequestsMade           ApprovalRequest[]      @relation("ApprovalRequestedBy")
+  approvalRequestsDecided        ApprovalRequest[]      @relation("ApprovalDecidedBy")
 
   @@index([tenantId])
 }
@@ -1464,4 +1484,238 @@ model PlacementApplication {
   @@unique([studentId, jobOpeningId])
   @@index([tenantId])
   @@index([jobOpeningId])
+}
+
+// ---- Milestone 4: Enterprise SaaS (roadmap Release 4) ----
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum BillingInvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+enum IntegrationProvider {
+  PAYMENT_GATEWAY
+  EMAIL
+  SMS
+  FIREBASE
+  GOOGLE_WORKSPACE
+  MICROSOFT_365
+  BIOMETRIC_ATTENDANCE
+  ACCOUNTING_SOFTWARE
+  LMS
+  LIBRARY_SYSTEM
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// Billing (roadmap #32) — an internal ledger, not a live payment
+// gateway, same reasoning as Fees. Self-service only: a tenant manages
+// its own subscription; there's no cross-tenant PLATFORM_ADMIN console
+// yet (Tenant has no RLS — see the init migration's comment on why
+// that's deferred, not an oversight).
+model Plan {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  studentLimit Int
+  facultyLimit Int
+  priceMonthly Int
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  tenantId           String             @unique
+  tenant             Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planId             String
+  plan               Plan               @relation(fields: [planId], references: [id])
+  status             SubscriptionStatus @default(TRIALING)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  invoices BillingInvoice[]
+}
+
+model BillingInvoice {
+  id             String               @id @default(cuid())
+  tenantId       String
+  tenant         Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId String
+  subscription   Subscription         @relation(fields: [subscriptionId], references: [id])
+  amount         Int
+  status         BillingInvoiceStatus @default(PENDING)
+  periodStart    DateTime
+  periodEnd      DateTime
+  paidAt         DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@index([tenantId])
+  @@index([subscriptionId])
+}
+
+// Auth hardening (roadmap #34). MfaRecoveryCode: one-time backup codes,
+// hashed like refresh tokens. LoginHistory: only written for a
+// resolved user (a failed attempt against an email that doesn't exist
+// has no tenant to scope the row to — same reasoning as the login
+// bootstrap exception on User).
+model MfaRecoveryCode {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model LoginHistory {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress String?
+  userAgent String?
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([userId, createdAt])
+}
+
+// API Keys (roadmap #33) — a key authenticates AS its creating user
+// (inherits their exact role/permissions) rather than carrying its own
+// scope system. Looked up by hash before the tenant is known, same
+// bootstrap problem as User email / RefreshToken hash lookups — see
+// findApiKeyByHash in src/prisma/client.ts and this table's RLS policy.
+model ApiKey {
+  id              String    @id @default(cuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name            String
+  keyHash         String    @unique
+  keyPrefix       String
+  createdByUserId String
+  createdBy       User      @relation(fields: [createdByUserId], references: [id])
+  lastUsedAt      DateTime?
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([tenantId])
+}
+
+// Webhooks (roadmap #33) — inline delivery (a single fetch at the
+// moment an event fires), no retry queue yet; WebhookDelivery is what
+// a future queue-backed retry would read from. URLs are tenant-
+// supplied and get POSTed to by this server — a real SSRF vector, see
+// src/utils/ssrfGuard.ts, checked at registration AND before every
+// delivery attempt.
+model WebhookEndpoint {
+  id         String   @id @default(cuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  url        String
+  secret     String
+  eventTypes String[]
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId])
+}
+
+model WebhookDelivery {
+  id                String                @id @default(cuid())
+  tenantId          String
+  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  webhookEndpointId String
+  webhookEndpoint   WebhookEndpoint       @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+  eventType         String
+  payload           Json
+  status            WebhookDeliveryStatus @default(PENDING)
+  attempts          Int                   @default(0)
+  responseStatus    Int?
+  lastAttemptAt     DateTime?
+  createdAt         DateTime              @default(now())
+
+  @@index([tenantId])
+  @@index([webhookEndpointId])
+}
+
+// Integrations (roadmap #33) — config only. Enabling one flips a flag
+// and stores settings; no code path ever calls out to any of these
+// providers. settings is plain JSON, not encrypted — a real
+// limitation (production needs a KMS-backed secret store), documented
+// rather than silently ignored.
+model IntegrationConfig {
+  id        String              @id @default(cuid())
+  tenantId  String
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  provider  IntegrationProvider
+  enabled   Boolean             @default(false)
+  settings  Json?
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@unique([tenantId, provider])
+  @@index([tenantId])
+}
+
+// Minimal generic approval engine (roadmap #24) — deliberately NOT the
+// full Workflow/WorkflowStep pair; no concrete multi-step chain exists
+// anywhere yet to justify it. The six existing per-module approval
+// flows (attendance corrections, marks revisions, leave, admissions,
+// fee waivers, document verification) are untouched — this is for the
+// NEXT new approval-shaped feature.
+model ApprovalRequest {
+  id                String         @id @default(cuid())
+  tenantId          String
+  tenant            Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type              String
+  entity            String
+  entityId          String
+  requestedByUserId String
+  requestedBy       User           @relation("ApprovalRequestedBy", fields: [requestedByUserId], references: [id])
+  status            ApprovalStatus @default(PENDING)
+  reason            String?
+  decidedByUserId   String?
+  decidedBy         User?          @relation("ApprovalDecidedBy", fields: [decidedByUserId], references: [id])
+  decidedAt         DateTime?
+  decisionNotes     String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, status])
 }
