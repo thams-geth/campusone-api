@@ -3,9 +3,40 @@ import jwt from 'jsonwebtoken'
 import { env } from '../config/env'
 import { ApiError } from '../utils/ApiError'
 import { requestContext } from '../prisma/tenantContext'
+import { findApiKeyByHash, prisma } from '../prisma/client'
 import { getPermissionsForRole } from '../modules/rbac/permissionCache'
+import { getPrimaryRoleName } from '../modules/auth/auth.service'
+import { hashApiKey } from '../modules/api-keys/apiKey.service'
 import type { PermissionKey } from '../modules/rbac/permissions'
 import type { AccessTokenPayload } from '../modules/auth/token.types'
+
+/**
+ * Resolves an X-API-Key header to the tenant/user/role of the user who
+ * created it — a key authenticates AS its creating user rather than
+ * carrying its own separate scope, so it reuses every existing
+ * requirePermission check instead of a parallel authorization system.
+ */
+async function authenticateWithApiKey(req: Request, _res: Response, next: NextFunction, rawKey: string) {
+  const record = await findApiKeyByHash(hashApiKey(rawKey))
+  if (!record || record.revokedAt || !record.createdBy.isActive) {
+    next(ApiError.unauthorized('Invalid or revoked API key.'))
+    return
+  }
+
+  req.auth = { userId: record.createdByUserId, tenantId: record.tenantId, role: 'UNRESOLVED' }
+  requestContext.run(
+    { tenantId: record.tenantId, userId: record.createdByUserId, role: 'UNRESOLVED', requestId: req.requestId },
+    async () => {
+      const role = await getPrimaryRoleName(record.createdByUserId)
+      req.auth = { userId: record.createdByUserId, tenantId: record.tenantId, role }
+      await prisma.apiKey.update({ where: { id: record.id }, data: { lastUsedAt: new Date() } })
+      requestContext.run(
+        { tenantId: record.tenantId, userId: record.createdByUserId, role, requestId: req.requestId },
+        next,
+      )
+    },
+  ).catch(next)
+}
 
 /**
  * Verifies the access token and establishes the tenant/user/role
@@ -13,10 +44,19 @@ import type { AccessTokenPayload } from '../modules/auth/token.types'
  * reads it — see src/prisma/client.ts). Both steps live in one
  * middleware because there's no valid state where one exists without
  * the other: an authenticated request always has an active tenant.
+ *
+ * Also accepts an `X-API-Key` header as an alternate credential when
+ * there's no Authorization: Bearer token — see authenticateWithApiKey.
  */
-export function requireAuth(req: Request, _res: Response, next: NextFunction) {
+export function requireAuth(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization
   if (!header?.startsWith('Bearer ')) {
+    const apiKeyHeader = req.headers['x-api-key']
+    const rawKey = Array.isArray(apiKeyHeader) ? apiKeyHeader[0] : apiKeyHeader
+    if (rawKey) {
+      void authenticateWithApiKey(req, res, next, rawKey)
+      return
+    }
     next(ApiError.unauthorized())
     return
   }
