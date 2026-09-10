@@ -45,6 +45,8 @@ import { apiKeysRouter } from './modules/api-keys/apiKey.routes'
 import { webhooksRouter } from './modules/webhooks/webhook.routes'
 import { integrationsRouter } from './modules/integrations/integration.routes'
 import { approvalsRouter } from './modules/approvals/approval.routes'
+import { notificationsRouter } from './modules/notifications/notification.routes'
+import { classGroupsRouter } from './modules/class-groups/classGroup.routes'
 
 export function createApp() {
   const app = express()
@@ -130,6 +132,8 @@ export function createApp() {
   v1.use('/webhooks', webhooksRouter)
   v1.use('/integrations', integrationsRouter)
   v1.use('/approvals', approvalsRouter)
+  v1.use('/notifications', notificationsRouter)
+  v1.use('/class-groups', classGroupsRouter)
   // Roles/permissions admin surface — its own routes (/roles,
   // /permissions, /users/:id/role) rather than one resource prefix.
   v1.use(rbacRouter)
