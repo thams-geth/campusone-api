@@ -40,6 +40,11 @@ import { libraryRouter } from './modules/library/library.routes'
 import { certificatesRouter } from './modules/certificates/certificate.routes'
 import { activitiesRouter } from './modules/activities/activity.routes'
 import { placementsRouter } from './modules/placements/placement.routes'
+import { billingRouter } from './modules/billing/billing.routes'
+import { apiKeysRouter } from './modules/api-keys/apiKey.routes'
+import { webhooksRouter } from './modules/webhooks/webhook.routes'
+import { integrationsRouter } from './modules/integrations/integration.routes'
+import { approvalsRouter } from './modules/approvals/approval.routes'
 
 export function createApp() {
   const app = express()
@@ -120,6 +125,11 @@ export function createApp() {
   v1.use('/certificates', certificatesRouter)
   v1.use('/activities', activitiesRouter)
   v1.use('/placements', placementsRouter)
+  v1.use('/billing', billingRouter)
+  v1.use('/api-keys', apiKeysRouter)
+  v1.use('/webhooks', webhooksRouter)
+  v1.use('/integrations', integrationsRouter)
+  v1.use('/approvals', approvalsRouter)
   // Roles/permissions admin surface — its own routes (/roles,
   // /permissions, /users/:id/role) rather than one resource prefix.
   v1.use(rbacRouter)
