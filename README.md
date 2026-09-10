@@ -170,6 +170,7 @@ Permissions: `PROGRAM_READ` / `_CREATE` / `_UPDATE` / `_DELETE`.
 | Route | Request | Response |
 |---|---|---|
 | `GET /` | query: `page?, pageSize?, search?, departmentId?, status?` | `200` paginated `Program[]` |
+| `GET /:id` | — | `200 Program` |
 | `POST /` | body: `ProgramInput` | `201 Program` |
 | `PUT /:id` | body: `ProgramInput` | `200 Program` |
 | `DELETE /:id` | — | `204` — `409 PROGRAM_IN_USE` if it still has batches or subjects |
@@ -184,6 +185,8 @@ ProgramInput = { departmentId: string, name: string, code: string /* 2–12, upp
 
 Permissions: `BATCH_READ` / `_CREATE` / `_UPDATE` / `_DELETE`.
 
+Standard `GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`.
+
 ```ts
 BatchInput = { programId: string, academicYearId: string, name: string /* ≤40 */, startYear: number, endYear: number /* > startYear */, status?: "ACTIVE"|"INACTIVE"|"GRADUATED" }
 ```
@@ -193,6 +196,8 @@ BatchInput = { programId: string, academicYearId: string, name: string /* ≤40 
 ### Sections (`/api/v1/sections`) — module `CORE`
 
 Permissions: `SECTION_READ` / `_CREATE` / `_UPDATE` / `_DELETE`.
+
+Standard `GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`.
 
 ```ts
 SectionInput = { batchId: string, name: string /* ≤10 */, currentSemester: number /* 1–12 */, capacity?: number, status?: "ACTIVE"|"INACTIVE" }
@@ -204,6 +209,8 @@ SectionInput = { batchId: string, name: string /* ≤10 */, currentSemester: num
 
 Permissions: `SUBJECT_READ` / `_CREATE` / `_UPDATE` / `_DELETE`.
 
+Standard `GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`.
+
 ```ts
 SubjectInput = { programId: string, semesterNumber: number /* 1–12 */, code: string /* 2–12, uppercased */, name: string, credits: number /* 1–10 */, type?: "CORE"|"ELECTIVE"|"LAB"|"PROJECT"|"SEMINAR"|"PRACTICAL", facultyId?: string }
 ```
@@ -213,6 +220,8 @@ SubjectInput = { programId: string, semesterNumber: number /* 1–12 */, code: s
 ### Faculty (`/api/v1/faculty`) — module `CORE`
 
 Permissions: `FACULTY_READ` / `_CREATE` / `_UPDATE` / `_DELETE`. A faculty member is both an employee profile and a login-capable account — creating one provisions the underlying `User` (role `FACULTY`) too.
+
+Standard `GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`.
 
 ```ts
 // POST — provisions the login account
@@ -228,6 +237,8 @@ Faculty = FacultyUpdateInput & { id, tenantId, name, email, isActive, createdAt,
 
 Permissions: `ROOM_READ` / `_CREATE` / `_UPDATE` / `_DELETE`. Deliberately flat — no building/floor hierarchy yet.
 
+Standard `GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`.
+
 ```ts
 RoomInput = { name: string, code: string /* ≤20, uppercased */, capacity?: number, status?: "ACTIVE"|"INACTIVE" }
 ```
@@ -241,6 +252,7 @@ Permissions: `TIMETABLE_READ` / `_CREATE` / `_UPDATE` / `_DELETE`. The one Miles
 | Route | Request | Response |
 |---|---|---|
 | `GET /` | query: `page?, pageSize?, sectionId?, facultyId?, roomId?, dayOfWeek?` | `200` paginated `TimetableEntry[]` |
+| `GET /:id` | — | `200 TimetableEntry` |
 | `POST /` | body: `TimetableEntryInput` | `201 TimetableEntry` |
 | `PUT /:id` | body: `TimetableEntryInput` | `200 TimetableEntry` |
 | `DELETE /:id` | — | `204` |
@@ -314,6 +326,7 @@ Permissions: `LEAVE_READ`, `LEAVE_REQUEST` (self-service), `LEAVE_APPROVE` (also
 | `GET /types` \| `POST /types` \| `PUT /types/:id` \| `DELETE /types/:id` | `{ name, defaultDaysPerYear }` | Standard CRUD — `409 LEAVE_TYPE_IN_USE` on delete if requests exist |
 | `POST /requests` | `{ leaveTypeId, startDate, endDate, reason, studentId? }` | `201 LeaveRequest`, `PENDING` — `studentId` resolves to the caller's own Student profile if omitted |
 | `GET /requests` | query: `page?, pageSize?, studentId?, status?` | `200` paginated `LeaveRequest[]` |
+| `GET /requests/:id` | — | `200 LeaveRequest` |
 | `POST /requests/:id/approve` \| `/reject` | — | `200` — `409 ALREADY_REVIEWED` if not `PENDING` |
 | `GET /balance/:studentId` | query: `year?` (defaults to current year) | `200 [{ leaveTypeId, leaveTypeName, defaultDaysPerYear, usedDays, remainingDays }]` — computed on read, not a stored ledger |
 
@@ -340,7 +353,7 @@ Permissions: `EXAM_READ`, `EXAM_MANAGE`, `MARKS_READ`, `MARKS_ENTER`, `MARKS_EDI
 
 | Route | Request | Response |
 |---|---|---|
-| `GET /exams` \| `POST /exams` \| `PUT /exams/:id` \| `DELETE /exams/:id` | `{ name, examType, academicYearId, semesterNumber, startDate, endDate }` | Standard CRUD — `409 EXAM_IN_USE` on delete if schedules exist |
+| `GET /exams` \| `GET /exams/:id` \| `POST /exams` \| `PUT /exams/:id` \| `DELETE /exams/:id` | `{ name, examType, academicYearId, semesterNumber, startDate, endDate }` | Standard CRUD — `409 EXAM_IN_USE` on delete if schedules exist |
 | `GET /exams/:id/schedules` \| `POST /exams/:id/schedules` | `{ subjectId, examDate, startTime, endTime, roomId }` | `409 DUPLICATE_SCHEDULE` — one schedule per subject per exam |
 | `PUT /schedules/:id` \| `DELETE /schedules/:id` | — | `409 SCHEDULE_IN_USE` on delete if marks exist |
 | `POST /schedules/:id/marks` | `{ marks: [{ studentId, marksObtained?, maxMarks, specialStatus? }] }` | `200 Marks[]`, `DRAFT` — `409 MARKS_NOT_EDITABLE` if any entry has moved past `DRAFT` |
@@ -373,8 +386,10 @@ Permissions: `DOCUMENT_READ`, `DOCUMENT_MANAGE`, `DOCUMENT_VERIFY`. Generic meta
 |---|---|---|
 | `GET /` | query: `page?, pageSize?, ownerType?, ownerId?, type?, status?` | `200` paginated `Document[]` — **staff-tier only** (`DOCUMENT_MANAGE`/`_VERIFY`) |
 | `GET /mine` | — | `200 Document[]` — the caller's own (resolved via their Student/Faculty profile) |
+| `GET /:id` | — | `200 Document` — staff-tier only |
 | `POST /` | `{ ownerType, ownerId, type, fileUrl, expiryDate? }` | `201 Document`, `PENDING` |
 | `PUT /:id` | same body | `200` — bumps `version`, resets to `PENDING` (a new file needs re-verification) |
+| `DELETE /:id` | — | `204` |
 | `POST /:id/verify` \| `/reject` | — | `200` — `409 ALREADY_REVIEWED` if not `PENDING` |
 
 `ownerType: STUDENT \| FACULTY`; `type: BONAFIDE \| TRANSFER_CERTIFICATE \| CONDUCT_CERTIFICATE \| MARK_SHEET \| ID_PROOF \| OTHER`.
@@ -470,7 +485,7 @@ Permissions: `LIBRARY_READ`, `LIBRARY_MANAGE`, `LIBRARY_ISSUE`. Author/publisher
 
 | Route | Request | Response |
 |---|---|---|
-| `GET /books` \| `POST /books` \| `PUT /books/:id` \| `DELETE /books/:id` | `{ title, author, publisher?, category?, isbn?, totalCopies }` | `409 BOOK_IN_USE` on delete for any issue history |
+| `GET /books` \| `GET /books/:id` \| `POST /books` \| `PUT /books/:id` \| `DELETE /books/:id` | `{ title, author, publisher?, category?, isbn?, totalCopies }` | `409 BOOK_IN_USE` on delete for any issue history |
 | `GET /issues` | query: `page?, pageSize?, bookId?, ownerType?, ownerId?` | Full roster — **staff-tier only** (`LIBRARY_MANAGE`) |
 | `GET /issues/mine` | — | self-service, resolved via the caller's Student or Faculty profile |
 | `POST /issues` | `{ bookId, ownerType: STUDENT\|FACULTY, ownerId, dueDate }` | `201` — `409 NO_COPIES_AVAILABLE` |
@@ -498,6 +513,7 @@ Permissions: `ACTIVITY_READ`, `ACTIVITY_MANAGE` (staff, any student), `ACTIVITY_
 |---|---|---|
 | `GET /` | query: `page?, pageSize?, studentId?, type?` | Full roster — **staff-tier only** (`ACTIVITY_MANAGE`) |
 | `GET /mine` | — | self-service |
+| `GET /:id` | — | `200 StudentActivity` |
 | `POST /` | `{ type, title, description?, date, certificateUrl?, studentId? }` | `201` — `studentId` resolves to the caller's own profile if omitted |
 | `PUT /:id` \| `DELETE /:id` | — | staff-tier only (no self-editing after creation) |
 
@@ -510,7 +526,7 @@ Permissions: `PLACEMENT_READ`, `PLACEMENT_MANAGE`, `PLACEMENT_APPLY` (self-servi
 | Route | Request | Response |
 |---|---|---|
 | `GET/POST /companies`, `DELETE /companies/:id` | `{ name, website? }` | `409 COMPANY_IN_USE` on delete if openings exist |
-| `GET/POST /openings`, `DELETE /openings/:id` | `{ companyId, title, description?, minCgpa?, ctcOffered?, applicationDeadline? }` | `409 OPENING_IN_USE` on delete if applications exist |
+| `GET/POST /openings`, `GET /openings/:id`, `DELETE /openings/:id` | `{ companyId, title, description?, minCgpa?, ctcOffered?, applicationDeadline? }` | `409 OPENING_IN_USE` on delete if applications exist |
 | `POST /openings/:id/apply` | `{ studentId? }` | `201`, `APPLIED` — `409 CGPA_NOT_MET` if below `minCgpa` (via `examinations`' CGPA calculation), `409 DEADLINE_PASSED`, `409 ALREADY_APPLIED` |
 | `GET /applications` | query: `page?, pageSize?, jobOpeningId?, studentId?, status?` | Full roster — **staff-tier only** (`PLACEMENT_MANAGE`) |
 | `GET /applications/mine` | — | self-service |

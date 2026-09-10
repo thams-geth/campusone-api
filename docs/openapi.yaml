@@ -503,6 +503,7 @@ paths:
         "400": { description: "Invalid departmentId" }
         "409": { description: "DUPLICATE_CODE" }
   /api/v1/programs/{id}:
+    get: { tags: [Programs], summary: Get a program, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put:
       tags: [Programs]
       summary: Update a program
@@ -544,6 +545,7 @@ paths:
         "201": { description: Created }
         "409": { description: "DUPLICATE_BATCH — repeated name within the program" }
   /api/v1/batches/{id}:
+    get: { tags: [Batches], summary: Get a batch, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put: { tags: [Batches], summary: Update a batch, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
     delete: { tags: [Batches], summary: Delete a batch, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "BATCH_IN_USE — still has sections" } } }
 
@@ -574,6 +576,7 @@ paths:
         "201": { description: Created }
         "409": { description: "DUPLICATE_SECTION — repeated name within the batch" }
   /api/v1/sections/{id}:
+    get: { tags: [Sections], summary: Get a section, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put: { tags: [Sections], summary: Update a section, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
     delete: { tags: [Sections], summary: Delete a section, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "SECTION_IN_USE — still has students or timetable entries" } } }
 
@@ -606,6 +609,7 @@ paths:
         "201": { description: Created }
         "409": { description: "DUPLICATE_CODE" }
   /api/v1/subjects/{id}:
+    get: { tags: [Subjects], summary: Get a subject, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put: { tags: [Subjects], summary: Update a subject, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
     delete: { tags: [Subjects], summary: Delete a subject, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "SUBJECT_IN_USE — still has timetable entries" } } }
 
@@ -642,6 +646,7 @@ paths:
         "201": { description: Created }
         "409": { description: "DUPLICATE_EMAIL / DUPLICATE_EMPLOYEE_CODE" }
   /api/v1/faculty/{id}:
+    get: { tags: [Faculty], summary: Get a faculty member, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put:
       tags: [Faculty]
       summary: Update a faculty member
@@ -679,6 +684,7 @@ paths:
                 status: { type: string, enum: [ACTIVE, INACTIVE] }
       responses: { "201": { description: Created }, "409": { description: "DUPLICATE_CODE" } }
   /api/v1/rooms/{id}:
+    get: { tags: [Rooms], summary: Get a room, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put: { tags: [Rooms], summary: Update a room, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
     delete: { tags: [Rooms], summary: Delete a room, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "ROOM_IN_USE — still has timetable entries" } } }
 
@@ -727,6 +733,7 @@ paths:
         "400": { description: "Invalid relation id" }
         "409": { description: "FACULTY_CONFLICT / ROOM_CONFLICT / SECTION_CONFLICT" }
   /api/v1/timetable/{id}:
+    get: { tags: [Timetable], summary: Get a timetable entry, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put: { tags: [Timetable], summary: Update a timetable entry, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
     delete: { tags: [Timetable], summary: Delete a timetable entry, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } }
 
@@ -853,7 +860,29 @@ paths:
       tags: [Attendance]
       summary: A student's attendance records
       parameters:
-        - { $ref: "#/components/parameters/PathId" }
+        - { name: studentId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+  /api/v1/attendance/section/{sectionId}:
+    get:
+      tags: [Attendance]
+      summary: A section's attendance records
+      parameters:
+        - { name: sectionId, in: path, required: true, schema: { type: string } }
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PageSize" }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+      responses: { "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PaginatedGeneric" } } } } }
+  /api/v1/attendance/subject/{subjectId}:
+    get:
+      tags: [Attendance]
+      summary: A subject's attendance records
+      parameters:
+        - { name: subjectId, in: path, required: true, schema: { type: string } }
         - { $ref: "#/components/parameters/Page" }
         - { $ref: "#/components/parameters/PageSize" }
         - { name: dateFrom, in: query, schema: { type: string, format: date } }
@@ -917,6 +946,8 @@ paths:
               required: [leaveTypeId, startDate, endDate, reason]
               properties: { leaveTypeId: { type: string }, startDate: { type: string, format: date }, endDate: { type: string, format: date }, reason: { type: string }, studentId: { type: string } }
       responses: { "201": { description: "Created, PENDING" } }
+  /api/v1/leave/requests/{id}:
+    get: { tags: [Leave], summary: Get a leave request, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
   /api/v1/leave/requests/{id}/approve:
     post: { tags: [Leave], summary: Approve a leave request (sets AttendanceRecord to ON_LEAVE for the range), parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "ALREADY_REVIEWED" } } }
   /api/v1/leave/requests/{id}/reject:
@@ -926,7 +957,7 @@ paths:
       tags: [Leave]
       summary: A student's leave balance (computed on read)
       parameters:
-        - { $ref: "#/components/parameters/PathId" }
+        - { name: studentId, in: path, required: true, schema: { type: string } }
         - { name: year, in: query, schema: { type: integer } }
       responses:
         "200":
@@ -1022,6 +1053,7 @@ paths:
                 endDate: { type: string, format: date }
       responses: { "201": { description: Created } }
   /api/v1/examinations/exams/{id}:
+    get: { tags: [Examinations], summary: Get an exam, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put: { tags: [Examinations], summary: Update an exam, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
     delete: { tags: [Examinations], summary: Delete an exam, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "EXAM_IN_USE" } } }
   /api/v1/examinations/exams/{id}/schedules:
@@ -1190,7 +1222,9 @@ paths:
   /api/v1/documents/mine:
     get: { tags: [Documents], summary: "The caller's own documents", responses: { "200": { description: OK } } }
   /api/v1/documents/{id}:
+    get: { tags: [Documents], summary: "Get a document (staff-tier only)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put: { tags: [Documents], summary: "Update a document (bumps version, resets to PENDING)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
+    delete: { tags: [Documents], summary: Delete a document record, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } }
   /api/v1/documents/{id}/verify:
     post: { tags: [Documents], summary: Verify a document, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "409": { description: "ALREADY_REVIEWED" } } }
   /api/v1/documents/{id}/reject:
@@ -1498,6 +1532,7 @@ paths:
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [title, author, totalCopies], properties: { title: { type: string }, author: { type: string }, publisher: { type: string }, category: { type: string }, isbn: { type: string }, totalCopies: { type: integer } } } } } }
       responses: { "201": { description: Created } }
   /api/v1/library/books/{id}:
+    get: { tags: [Library], summary: Get a book, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put: { tags: [Library], summary: Update a book, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
     delete: { tags: [Library], summary: Delete a book, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "BOOK_IN_USE" } } }
   /api/v1/library/issues:
@@ -1577,6 +1612,7 @@ paths:
   /api/v1/activities/mine:
     get: { tags: [Activities], summary: "The caller's own activities", responses: { "200": { description: OK } } }
   /api/v1/activities/{id}:
+    get: { tags: [Activities], summary: Get an activity, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put: { tags: [Activities], summary: "Update an activity (staff-tier only)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
     delete: { tags: [Activities], summary: "Delete an activity (staff-tier only)", parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } }
 
@@ -1597,6 +1633,7 @@ paths:
             schema: { type: object, required: [companyId, title], properties: { companyId: { type: string }, title: { type: string }, description: { type: string }, minCgpa: { type: number }, ctcOffered: { type: number }, applicationDeadline: { type: string, format: date } } }
       responses: { "201": { description: Created } }
   /api/v1/placements/openings/{id}:
+    get: { tags: [Placements], summary: Get a job opening, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     delete: { tags: [Placements], summary: Delete a job opening, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted }, "409": { description: "OPENING_IN_USE" } } }
   /api/v1/placements/openings/{id}/apply:
     post:
