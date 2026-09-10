@@ -201,63 +201,67 @@ model Tenant {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  modules               TenantModule[]
-  users                 User[]
-  roles                 Role[]
-  userRoles             UserRole[]
-  departments           Department[]
-  academicYears         AcademicYear[]
-  programs              Program[]
-  batches               Batch[]
-  sections              Section[]
-  subjects              Subject[]
-  faculty               Faculty[]
-  rooms                 Room[]
-  timetableEntries      TimetableEntry[]
-  students              Student[]
-  auditLogs             AuditLog[]
-  refreshTokens         RefreshToken[]
-  attendanceSessions    AttendanceSession[]
-  attendanceRecords     AttendanceRecord[]
-  attendanceCorrections AttendanceCorrection[]
-  leaveTypes            LeaveType[]
-  leaveRequests         LeaveRequest[]
-  assignments           Assignment[]
-  assignmentSubmissions AssignmentSubmission[]
-  exams                 Exam[]
-  examSchedules         ExamSchedule[]
-  marks                 Marks[]
-  announcements         Announcement[]
-  documents             Document[]
-  admissionApplications AdmissionApplication[]
-  feeStructures         FeeStructure[]
-  feeInvoices           FeeInvoice[]
-  feeAdjustments        FeeAdjustment[]
-  payments              Payment[]
-  hostels               Hostel[]
-  hostelRooms           HostelRoom[]
-  hostelAllocations     HostelAllocation[]
-  vehicles              Vehicle[]
-  routes                Route[]
-  stops                 Stop[]
-  studentTransports     StudentTransport[]
-  books                 Book[]
-  bookIssues            BookIssue[]
-  certificateTypes      CertificateType[]
-  certificateRequests   CertificateRequest[]
-  studentActivities     StudentActivity[]
-  companies             Company[]
-  jobOpenings           JobOpening[]
-  placementApplications PlacementApplication[]
-  subscription          Subscription?
-  billingInvoices       BillingInvoice[]
-  mfaRecoveryCodes      MfaRecoveryCode[]
-  loginHistory          LoginHistory[]
-  apiKeys               ApiKey[]
-  webhookEndpoints      WebhookEndpoint[]
-  webhookDeliveries     WebhookDelivery[]
-  integrationConfigs    IntegrationConfig[]
-  approvalRequests      ApprovalRequest[]
+  modules                 TenantModule[]
+  users                   User[]
+  roles                   Role[]
+  userRoles               UserRole[]
+  departments             Department[]
+  academicYears           AcademicYear[]
+  programs                Program[]
+  batches                 Batch[]
+  sections                Section[]
+  subjects                Subject[]
+  faculty                 Faculty[]
+  rooms                   Room[]
+  timetableEntries        TimetableEntry[]
+  students                Student[]
+  auditLogs               AuditLog[]
+  refreshTokens           RefreshToken[]
+  attendanceSessions      AttendanceSession[]
+  attendanceRecords       AttendanceRecord[]
+  attendanceCorrections   AttendanceCorrection[]
+  leaveTypes              LeaveType[]
+  leaveRequests           LeaveRequest[]
+  assignments             Assignment[]
+  assignmentSubmissions   AssignmentSubmission[]
+  exams                   Exam[]
+  examSchedules           ExamSchedule[]
+  marks                   Marks[]
+  announcements           Announcement[]
+  documents               Document[]
+  admissionApplications   AdmissionApplication[]
+  feeStructures           FeeStructure[]
+  feeInvoices             FeeInvoice[]
+  feeAdjustments          FeeAdjustment[]
+  payments                Payment[]
+  hostels                 Hostel[]
+  hostelRooms             HostelRoom[]
+  hostelAllocations       HostelAllocation[]
+  vehicles                Vehicle[]
+  routes                  Route[]
+  stops                   Stop[]
+  studentTransports       StudentTransport[]
+  books                   Book[]
+  bookIssues              BookIssue[]
+  certificateTypes        CertificateType[]
+  certificateRequests     CertificateRequest[]
+  studentActivities       StudentActivity[]
+  companies               Company[]
+  jobOpenings             JobOpening[]
+  placementApplications   PlacementApplication[]
+  subscription            Subscription?
+  billingInvoices         BillingInvoice[]
+  mfaRecoveryCodes        MfaRecoveryCode[]
+  loginHistory            LoginHistory[]
+  apiKeys                 ApiKey[]
+  webhookEndpoints        WebhookEndpoint[]
+  webhookDeliveries       WebhookDelivery[]
+  integrationConfigs      IntegrationConfig[]
+  approvalRequests        ApprovalRequest[]
+  notifications           Notification[]
+  notificationDeliveries  NotificationDelivery[]
+  notificationPreferences NotificationPreference[]
+  classGroupMessages      ClassGroupMessage[]
 }
 
 // tenant_modules: which modules a tenant has installed/enabled, and at
@@ -367,25 +371,28 @@ model User {
   facultyProfile Faculty?
   studentProfile Student?
 
-  attendanceCorrectionsRequested AttendanceCorrection[] @relation("AttendanceCorrectionRequestedBy")
-  attendanceCorrectionsReviewed  AttendanceCorrection[] @relation("AttendanceCorrectionReviewedBy")
-  leaveRequestsReviewed          LeaveRequest[]         @relation("LeaveRequestReviewedBy")
-  assignmentSubmissionsEvaluated AssignmentSubmission[] @relation("AssignmentSubmissionEvaluatedBy")
-  marksEntered                   Marks[]                @relation("MarksEnteredBy")
-  marksVerified                  Marks[]                @relation("MarksVerifiedBy")
-  marksPublished                 Marks[]                @relation("MarksPublishedBy")
-  announcementsAuthored          Announcement[]         @relation("AnnouncementAuthor")
-  documentsUploaded              Document[]             @relation("DocumentUploadedBy")
-  documentsVerified              Document[]             @relation("DocumentVerifiedBy")
-  admissionsReviewed             AdmissionApplication[] @relation("AdmissionReviewedBy")
-  feeAdjustmentsCreated          FeeAdjustment[]        @relation("FeeAdjustmentCreatedBy")
-  paymentsRecorded               Payment[]              @relation("PaymentRecordedBy")
-  certificatesIssued             CertificateRequest[]   @relation("CertificateIssuedBy")
+  attendanceCorrectionsRequested AttendanceCorrection[]   @relation("AttendanceCorrectionRequestedBy")
+  attendanceCorrectionsReviewed  AttendanceCorrection[]   @relation("AttendanceCorrectionReviewedBy")
+  leaveRequestsReviewed          LeaveRequest[]           @relation("LeaveRequestReviewedBy")
+  assignmentSubmissionsEvaluated AssignmentSubmission[]   @relation("AssignmentSubmissionEvaluatedBy")
+  marksEntered                   Marks[]                  @relation("MarksEnteredBy")
+  marksVerified                  Marks[]                  @relation("MarksVerifiedBy")
+  marksPublished                 Marks[]                  @relation("MarksPublishedBy")
+  announcementsAuthored          Announcement[]           @relation("AnnouncementAuthor")
+  documentsUploaded              Document[]               @relation("DocumentUploadedBy")
+  documentsVerified              Document[]               @relation("DocumentVerifiedBy")
+  admissionsReviewed             AdmissionApplication[]   @relation("AdmissionReviewedBy")
+  feeAdjustmentsCreated          FeeAdjustment[]          @relation("FeeAdjustmentCreatedBy")
+  paymentsRecorded               Payment[]                @relation("PaymentRecordedBy")
+  certificatesIssued             CertificateRequest[]     @relation("CertificateIssuedBy")
   mfaRecoveryCodes               MfaRecoveryCode[]
   loginHistory                   LoginHistory[]
   apiKeysCreated                 ApiKey[]
-  approvalRequestsMade           ApprovalRequest[]      @relation("ApprovalRequestedBy")
-  approvalRequestsDecided        ApprovalRequest[]      @relation("ApprovalDecidedBy")
+  approvalRequestsMade           ApprovalRequest[]        @relation("ApprovalRequestedBy")
+  approvalRequestsDecided        ApprovalRequest[]        @relation("ApprovalDecidedBy")
+  notifications                  Notification[]
+  notificationPreferences        NotificationPreference[]
+  classGroupMessages             ClassGroupMessage[]      @relation("ClassGroupMessageAuthor")
 
   @@index([tenantId])
 }
@@ -516,6 +523,7 @@ model Section {
   timetableEntries   TimetableEntry[]
   attendanceSessions AttendanceSession[]
   assignments        Assignment[]
+  classGroupMessages ClassGroupMessage[]
 
   @@unique([tenantId, batchId, name])
   @@index([tenantId])
@@ -949,23 +957,28 @@ model Marks {
 // delivery yet (rest of the COMMUNICATION module, deferred same as
 // Notifications was in Milestone 1).
 model Announcement {
-  id           String               @id @default(cuid())
-  tenantId     String
-  tenant       Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  title        String
-  content      String
-  authorUserId String
-  author       User                 @relation("AnnouncementAuthor", fields: [authorUserId], references: [id])
-  audience     AnnouncementAudience
-  departmentId String?
-  programId    String?
-  batchId      String?
-  sectionId    String?
-  priority     AnnouncementPriority @default(MEDIUM)
-  publishAt    DateTime             @default(now())
-  expiryAt     DateTime?
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  id             String               @id @default(cuid())
+  tenantId       String
+  tenant         Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  title          String
+  content        String
+  authorUserId   String
+  author         User                 @relation("AnnouncementAuthor", fields: [authorUserId], references: [id])
+  audience       AnnouncementAudience
+  departmentId   String?
+  programId      String?
+  batchId        String?
+  sectionId      String?
+  priority       AnnouncementPriority @default(MEDIUM)
+  publishAt      DateTime             @default(now())
+  expiryAt       DateTime?
+  // Set once a reminder notification has fired for this announcement's
+  // upcoming expiry — prevents the periodic reminder scan from
+  // re-notifying the same audience on every pass. Null forever if
+  // expiryAt is null (nothing to remind about).
+  reminderSentAt DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   @@index([tenantId])
   @@index([tenantId, publishAt])
@@ -1718,4 +1731,97 @@ model ApprovalRequest {
 
   @@index([tenantId])
   @@index([tenantId, status])
+}
+
+// Notifications (roadmap #13). NotificationTemplate is deliberately NOT
+// built — same "minimal, not the full model" call as the approval
+// engine above; there's no library of reusable templates yet to
+// justify one, so title/body are written directly by the caller.
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum NotificationDeliveryStatus {
+  SENT
+  FAILED
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String
+  entity    String?
+  entityId  String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  deliveries NotificationDelivery[]
+
+  @@index([tenantId])
+  @@index([tenantId, userId, readAt])
+}
+
+// One row per channel attempted for a Notification. IN_APP is always
+// SENT immediately — creating the Notification row IS the delivery for
+// that channel. EMAIL/SMS/PUSH only get a row if the tenant has the
+// mapped IntegrationConfig enabled (EMAIL->EMAIL, SMS->SMS,
+// PUSH->FIREBASE) — and even then it's recorded FAILED with a reason,
+// since no live provider call is implemented (config-only, same
+// pattern as the Integrations module itself).
+model NotificationDelivery {
+  id             String                     @id @default(cuid())
+  tenantId       String
+  tenant         Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  notificationId String
+  notification   Notification               @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  channel        NotificationChannel
+  status         NotificationDeliveryStatus
+  failureReason  String?
+  attemptedAt    DateTime                   @default(now())
+
+  @@index([tenantId])
+  @@index([notificationId])
+}
+
+// Per-user, per-channel opt-out. No row = enabled. IN_APP can't be
+// disabled (no route exposes it) so it never gets a row here.
+model NotificationPreference {
+  id       String              @id @default(cuid())
+  tenantId String
+  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel  NotificationChannel
+  enabled  Boolean             @default(true)
+
+  @@unique([userId, channel])
+  @@index([tenantId])
+}
+
+// Class groups (user request, not in the roadmap) — deliberately NOT a
+// separate ClassGroup entity: a Section already IS the class, so a
+// message just carries a sectionId. Membership is derived on read from
+// existing relations (Student.sectionId, TimetableEntry.facultyId for
+// that section) rather than a stored membership list.
+model ClassGroupMessage {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sectionId    String
+  section      Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  authorUserId String
+  author       User     @relation("ClassGroupMessageAuthor", fields: [authorUserId], references: [id])
+  body         String
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([sectionId, createdAt])
 }
