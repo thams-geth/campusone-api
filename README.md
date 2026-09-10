@@ -50,7 +50,7 @@ All routes except `/health*`, `POST /api/v1/auth/login`, and `POST /api/v1/auth/
 
 - **Permissions, not hardcoded roles.** `Role`/`Permission`/`RolePermission`/`UserRole` are DB tables (`src/modules/rbac`) — every tenant is seeded with 10 system roles (`PLATFORM_ADMIN, SUPER_ADMIN, COLLEGE_ADMIN, DEPARTMENT_ADMIN, HOD, EXAM_ADMIN, FACULTY, STAFF, STUDENT, PARENT`) and default permission grants (`src/modules/rbac/permissions.ts`). Each route below is written as "requires permission `X`" — check that file for exactly which roles hold it today; that mapping can change without a route-code change.
   - **Gotcha:** seeding only happens at tenant creation (`seedTenantRoles`). If you extend the permission catalogue later, an *existing* tenant's roles don't automatically pick up the new grants — re-run `npm run prisma:seed` (idempotent — it re-syncs the demo tenant's grants via `skipDuplicates`) or call `seedTenantRoles(tenantId)` for any other existing tenant.
-- **Modules.** Each route is also gated to a `ModuleId` — `CORE`, `ACADEMICS` (Attendance, Assignments, Leave, Timetable), `EXAMINATION` (Exams/Marks/Results), or `COMMUNICATION` (Announcements). `CORE` is always on; the others must be enabled per-tenant via a `TenantModule` row (no admin endpoint for this yet — see `enableModule` in `src/test/helpers.ts` for the shape, or set it directly).
+- **Modules.** Each route is also gated to a `ModuleId` — `CORE`, `ACADEMICS` (Attendance, Assignments, Leave, Timetable), `EXAMINATION` (Exams/Marks/Results), `COMMUNICATION` (Announcements), `ADMISSIONS`, `FINANCE` (Fees), `HOSTEL_TRANSPORT` (Hostel + Transport), `LIBRARY`, or `PLACEMENT_ALUMNI` (Placements). `CORE` is always on; the others must be enabled per-tenant via a `TenantModule` row (no admin endpoint for this yet — see `enableModule` in `src/test/helpers.ts` for the shape, or set it directly). Only `HR_PAYROLL`, `COMPLIANCE_REPORTING`, and `INVENTORY_PROCUREMENT` remain unused, reserved for Release 4.
 
 ### Auth endpoints (`/api/v1/auth`)
 
@@ -384,6 +384,116 @@ Permissions: `STUDENT_IMPORT`, `STUDENT_EXPORT`. CSV, not Excel (no binary-parsi
 
 CSV columns: `firstName,lastName,email,phone,rollNumber,departmentId,gender,dateOfBirth,admissionDate,status,sectionId,currentSemester,guardianName,guardianPhone,address` (`departmentId`/`sectionId` are raw ids, not codes).
 
+### Admissions (`/api/v1/admissions`) — module `ADMISSIONS`
+
+Permissions: `ADMISSION_READ`, `ADMISSION_CREATE`, `ADMISSION_UPDATE`, `ADMISSION_DECIDE` (advance/reject/withdraw), `ADMISSION_ENROLL`. Applicant fields live directly on the application (no separate Applicant entity). Lifecycle: `APPLIED → DOCUMENT_VERIFICATION → SHORTLISTED → APPROVED → OFFERED → ACCEPTED`, one step at a time via `/advance` — `ENROLLED` is reachable **only** through `/enroll`, never generic advance, since that's the action that actually creates the Student row.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` \| `GET /:id` | query: `page?, pageSize?, programId?, status?` | Standard list/get |
+| `POST /` | `{ firstName, lastName, email, phone, dateOfBirth, programId }` | `201`, `APPLIED` — `409 DUPLICATE_APPLICATION` for a repeat email+program |
+| `PUT /:id` | same body | `200` — `409 APPLICATION_FINALIZED` once `ENROLLED`/`REJECTED`/`WITHDRAWN` |
+| `POST /:id/advance` | `{ reviewNotes? }` | `200` — one step forward; `409 ALREADY_AT_FINAL_STAGE` once `ACCEPTED` (use `/enroll`) |
+| `POST /:id/reject` \| `/withdraw` | `{ reviewNotes? }` (reject only) | `200` |
+| `POST /:id/enroll` | `{ rollNumber, gender, sectionId? }` | `201 Student` (with `admissionApplicationId` set) — `409 NOT_ACCEPTED` unless status is `ACCEPTED`. Creates the Student through the exact same `createStudent` path a manual entry uses; `departmentId` is derived from the application's program. |
+
+### Fees & Finance (`/api/v1/fees`) — module `FINANCE`
+
+Permissions: `FEE_READ`, `FEE_MANAGE`, `PAYMENT_RECORD`, `PAYMENT_REFUND`. **An internal ledger, not a live payment gateway** — payments are admin-recorded (cash, bank transfer, or a gateway not wired up here); Razorpay/Cashfree integration is deferred to a future pass with real credentials. Invoice `status` is recomputed from the ledger on every payment/adjustment write, never trusted as stored truth on its own.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /structures` \| `POST /structures` | `{ programId, academicYearId, category, amount }` | `409 DUPLICATE_STRUCTURE` per program/year/category |
+| `DELETE /structures/:id` | — | `409 STRUCTURE_IN_USE` if invoices exist |
+| `GET /invoices` | query: `page?, pageSize?, studentId?, status?, category?` | Full roster — **staff-tier only** (`FEE_MANAGE`) |
+| `GET /invoices/mine` | — | `200 FeeInvoice[]` — self-service |
+| `POST /invoices` | `{ studentId, feeStructureId?, category, amount, dueDate }` | `201`, `PENDING` |
+| `POST /invoices/:id/adjustments` | `{ type: DISCOUNT\|SCHOLARSHIP\|FINE, amount, reason }` | `200` updated invoice — recomputes status |
+| `POST /invoices/:id/waive` | — | `200` — sets `WAIVED`, a sticky manual override the recompute leaves alone |
+| `POST /invoices/:id/payments` | `{ amount, method, transactionRef? }` | `201 Payment` — `409 INVOICE_SETTLED` once `PAID`/`WAIVED` |
+| `POST /payments/:id/refund` | `{ amount, reason }` | `201 Payment` (`isRefund: true`) — recomputes the invoice back out of `PAID` |
+
+`category: TUITION\|HOSTEL\|TRANSPORT\|EXAM\|LIBRARY\|LAB\|OTHER`. `status: PENDING\|PARTIAL\|PAID\|OVERDUE\|WAIVED`.
+
+### Hostel (`/api/v1/hostel`) — module `HOSTEL_TRANSPORT`
+
+Permissions: `HOSTEL_READ`, `HOSTEL_MANAGE`, `HOSTEL_ALLOCATE`. Flat — no Building/Floor; `bedNumber` is a plain field, auto-assigned to the lowest free number, with capacity checked in the service layer (no DB constraint).
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /hostels` \| `POST /hostels` \| `DELETE /hostels/:id` | `{ name }` | `409 HOSTEL_IN_USE` on delete if rooms exist |
+| `GET /rooms` \| `POST /rooms` \| `DELETE /rooms/:id` | `{ hostelId, roomNumber, capacity }` | `409 ROOM_IN_USE` on delete for any allocation history (not just active — the FK doesn't care about status) |
+| `GET /allocations` | query: `page?, pageSize?, studentId?, hostelRoomId?, status?` | Full roster — **staff-tier only** (`HOSTEL_MANAGE`) |
+| `GET /allocations/mine` | — | self-service |
+| `POST /allocations` | `{ studentId, hostelRoomId, startDate }` | `201` — `409 ROOM_FULL` / `ALREADY_ALLOCATED` |
+| `POST /allocations/:id/vacate` | — | `200`, `status: INACTIVE` |
+
+### Transport (`/api/v1/transport`) — module `HOSTEL_TRANSPORT`
+
+Permissions: `TRANSPORT_READ`, `TRANSPORT_MANAGE`, `TRANSPORT_ALLOCATE`. Driver name/phone are plain fields on `Vehicle` (no separate Driver entity).
+
+| Route | Request | Response |
+|---|---|---|
+| `GET/POST /vehicles`, `DELETE /vehicles/:id` | `{ registrationNumber, driverName, driverPhone, capacity }` | `409 VEHICLE_IN_USE` on delete if assigned to routes |
+| `GET/POST /routes`, `DELETE /routes/:id` | `{ name, vehicleId? }` | `409 ROUTE_IN_USE` on delete for any stops or allocation history |
+| `POST /routes/:id/stops`, `DELETE /stops/:id` | `{ name, sequence }` | `409 DUPLICATE_SEQUENCE`; `409 STOP_IN_USE` on delete for any allocation history |
+| `GET /allocations` | query: `page?, pageSize?, studentId?, routeId?, status?` | Full roster — **staff-tier only** (`TRANSPORT_MANAGE`) |
+| `GET /allocations/mine` | — | self-service |
+| `POST /allocations` | `{ studentId, routeId, stopId }` | `201` — `409 ALREADY_ALLOCATED` |
+| `POST /allocations/:id/remove` | — | `200`, `status: INACTIVE` |
+
+### Library (`/api/v1/library`) — module `LIBRARY`
+
+Permissions: `LIBRARY_READ`, `LIBRARY_MANAGE`, `LIBRARY_ISSUE`. Author/publisher/category are plain fields (no normalized tables); `availableCopies` tracked directly on `Book`. An issue's status (issued/returned/overdue) is derived from `returnedAt`/`dueDate` on read, never stored.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /books` \| `POST /books` \| `PUT /books/:id` \| `DELETE /books/:id` | `{ title, author, publisher?, category?, isbn?, totalCopies }` | `409 BOOK_IN_USE` on delete for any issue history |
+| `GET /issues` | query: `page?, pageSize?, bookId?, ownerType?, ownerId?` | Full roster — **staff-tier only** (`LIBRARY_MANAGE`) |
+| `GET /issues/mine` | — | self-service, resolved via the caller's Student or Faculty profile |
+| `POST /issues` | `{ bookId, ownerType: STUDENT\|FACULTY, ownerId, dueDate }` | `201` — `409 NO_COPIES_AVAILABLE` |
+| `POST /issues/:id/return` | — | `200` — computes `fineAmount` (₹10/day late, `null` if on time) |
+
+### Certificates (`/api/v1/certificates`) — module `CORE`
+
+Permissions: `CERTIFICATE_READ`, `CERTIFICATE_REQUEST` (self-service), `CERTIFICATE_ISSUE`. Distinct from Documents — this is the *issuance* workflow (roadmap §22: template/generatedBy/generatedAt/verification), not arbitrary file uploads.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /types` \| `POST /types` \| `DELETE /types/:id` | `{ name, category? }` | `409 CERTIFICATE_TYPE_IN_USE` on delete if requests exist |
+| `POST /requests` | `{ certificateTypeId, studentId? }` | `201`, `REQUESTED` |
+| `GET /requests` | query: `page?, pageSize?, studentId?, status?` | Full roster — **staff-tier only** (`CERTIFICATE_ISSUE`) |
+| `GET /requests/mine` | — | self-service |
+| `POST /requests/:id/issue` | — | `200` — sets a random `verificationCode`; `409 ALREADY_REVIEWED` if not `REQUESTED` |
+| `POST /requests/:id/reject` | `{ rejectionReason }` | `200` |
+| `GET /verify/:code` | — | `200 { valid: true, certificateType, studentName, rollNumber, issuedAt }` or `{ valid: false }` — stands in for "digital signature/QR"; no PDF/QR library added, the code itself is what a real QR would encode. Requires auth (not a public endpoint) — that's a deliberate scope boundary, not the eventual design. |
+
+### Student Activities (`/api/v1/activities`) — module `CORE`
+
+Permissions: `ACTIVITY_READ`, `ACTIVITY_MANAGE` (staff, any student), `ACTIVITY_SELF_REPORT` (student, own only). One lightweight record type covering achievements/events/clubs/sports/competitions/internships.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` | query: `page?, pageSize?, studentId?, type?` | Full roster — **staff-tier only** (`ACTIVITY_MANAGE`) |
+| `GET /mine` | — | self-service |
+| `POST /` | `{ type, title, description?, date, certificateUrl?, studentId? }` | `201` — `studentId` resolves to the caller's own profile if omitted |
+| `PUT /:id` \| `DELETE /:id` | — | staff-tier only (no self-editing after creation) |
+
+`type: ACHIEVEMENT\|EVENT\|CLUB\|SPORTS\|COMPETITION\|INTERNSHIP\|OTHER`.
+
+### Placements (`/api/v1/placements`) — module `PLACEMENT_ALUMNI`
+
+Permissions: `PLACEMENT_READ`, `PLACEMENT_MANAGE`, `PLACEMENT_APPLY` (self-service). No separate Interview/PlacementResult entities — both fold into the application's status and fields.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET/POST /companies`, `DELETE /companies/:id` | `{ name, website? }` | `409 COMPANY_IN_USE` on delete if openings exist |
+| `GET/POST /openings`, `DELETE /openings/:id` | `{ companyId, title, description?, minCgpa?, ctcOffered?, applicationDeadline? }` | `409 OPENING_IN_USE` on delete if applications exist |
+| `POST /openings/:id/apply` | `{ studentId? }` | `201`, `APPLIED` — `409 CGPA_NOT_MET` if below `minCgpa` (via `examinations`' CGPA calculation), `409 DEADLINE_PASSED`, `409 ALREADY_APPLIED` |
+| `GET /applications` | query: `page?, pageSize?, jobOpeningId?, studentId?, status?` | Full roster — **staff-tier only** (`PLACEMENT_MANAGE`) |
+| `GET /applications/mine` | — | self-service |
+| `PUT /applications/:id/status` | `{ status: SHORTLISTED\|INTERVIEW\|SELECTED\|REJECTED, notes?, offeredCtc? }` | `200` — `409 APPLICATION_FINALIZED` once `SELECTED`/`REJECTED` |
+
 ---
 
 If Postgres was already running from before `docker/init-app-role.sql` existed, that init script won't retroactively run on the existing volume — apply it by hand once:
@@ -417,6 +527,8 @@ src/
 │                 # programs, batches, sections, subjects, faculty, rooms, timetable,
 │                 # institution, audit, dashboard, attendance, leave, assignments,
 │                 # examinations, announcements, documents, reports, import-export,
+│                 # admissions, fees, hostel, transport, library, certificates,
+│                 # activities, placements,
 │                 # shared (audit-log writer + own-student/own-faculty resolvers)
 ├── prisma/       # Prisma client + extension, tenant context (AsyncLocalStorage)
 ├── utils/        # ApiError and other shared helpers
