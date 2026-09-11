@@ -329,6 +329,15 @@
         <li><a href="#getting-started">Getting started</a></li>
         <li><a href="#auth">Auth &amp; MFA</a></li>
         <li><a href="#roles">Using the API by role</a></li>
+        <li><a href="#admin-panel">Building an admin panel</a>
+          <ol>
+            <li><a href="#panel-session">The session wrapper</a></li>
+            <li><a href="#panel-crud">The CRUD screen</a></li>
+            <li><a href="#panel-modules">Module-gated navigation</a></li>
+            <li><a href="#panel-map">Screen → module map</a></li>
+            <li><a href="#panel-worked">Worked example</a></li>
+          </ol>
+        </li>
         <li><a href="#flows">Core flows</a>
           <ol>
             <li><a href="#flow-admissions">Admissions → enrollment</a></li>
@@ -466,7 +475,7 @@ npm run dev</pre>
   -H "Authorization: Bearer $TOKEN" -d '{"name":"CSE"}'
 
 <span class="c1"># 409 →</span>
-{ "message": "Code \"CSE\" is already in use.", "code": "DUPLICATE_CODE" }</pre>
+{ "message": "Department code \"CSE\" is already in use.", "code": "DUPLICATE_CODE" }</pre>
         </li>
         <li>
           <h4>Browse the rest interactively</h4>
@@ -626,12 +635,160 @@ curl -X POST http://localhost:4000/api/v1/users/usr_4b1/role \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -d '{"roleName":"HOD"}'</pre>
         </div>
-        <figcaption><b>Fig. 8.</b> The resolver behind the optional-id shape is <code class="inline">resolveOwnStudentId</code> (<code class="inline">src/modules/shared/studentContext.ts</code>) — same function on both sides of the door, not two different endpoints.</figcaption>
+        <figcaption><b>Fig. 3.</b> The resolver behind the optional-id shape is <code class="inline">resolveOwnStudentId</code> (<code class="inline">src/modules/shared/studentContext.ts</code>) — same function on both sides of the door, not two different endpoints.</figcaption>
+      </div>
+    </section>
+
+    <section class="chapter" id="admin-panel">
+      <div class="chapter-head"><span class="num">05</span><h2>Building an admin panel</h2></div>
+      <p class="measure">
+        Everything above is the machinery; this is what it means for the app you're actually
+        building. Almost every screen in a CampusOne admin panel is one of two shapes — a session
+        wrapper you build once, and a CRUD list/detail screen you build roughly thirty times with the
+        same four calls.
+      </p>
+
+      <h3 id="panel-session">1. The session wrapper (build this once)</h3>
+      <p class="measure">
+        Log in, keep the access token in memory (a store/context — <b>not</b>
+        <code class="inline">localStorage</code>, since a JWT sitting there is readable by any script
+        that gets injected onto the page). The refresh token never touches your JS at all — it's an
+        httpOnly cookie the browser manages for you.
+      </p>
+      <ol class="steps">
+        <li>
+          <h4>On every request, attach the token</h4>
+          <p><code class="inline">Authorization: Bearer &lt;token&gt;</code>. Also set
+            <code class="inline">credentials: 'include'</code> (fetch) or <code class="inline">withCredentials: true</code>
+            (axios) on <i>every</i> call — without it the browser won't send the refresh cookie
+            cross-origin, and <code class="inline">/auth/refresh</code> will silently 401 forever.</p>
+        </li>
+        <li>
+          <h4>On a 401 from any call, try one silent refresh</h4>
+          <p>Call <code class="inline">POST /auth/refresh</code> (no body — the cookie does the work),
+            swap in the new token, retry the original request once. If the refresh itself 401s, the
+            session is actually over — clear state and send the user to <code class="inline">/login</code>.
+            Don't retry a second time; a refresh token is single-use and rotates, so a loop here just
+            burns tokens.</p>
+        </li>
+        <li>
+          <h4>On app load, restore the session</h4>
+          <p>You have no token in memory yet (e.g. after a page reload), and
+            <code class="inline">/auth/me</code> requires one — so call
+            <code class="inline">POST /auth/refresh</code> first. A 200 means the httpOnly cookie was
+            still good; store the new token, then call <code class="inline">GET /auth/me</code> to get
+            the user. A 401 from the refresh call means there's no session to restore — go straight to
+            <code class="inline">/login</code>.</p>
+        </li>
+        <li>
+          <h4>Build a <code class="inline">can(permissionKey)</code> helper</h4>
+          <p>Fetch <code class="inline">GET /roles</code> once per session and find the entry matching
+            <code class="inline">me.role</code> — its <code class="inline">permissions</code> array is
+            everything the current user can do. Use it to hide/disable buttons for actions they don't
+            have. This is a UX nicety only; the API enforces the real boundary regardless of what the
+            UI shows, so a hidden "Delete" button is not a substitute for the server's own 403.</p>
+        </li>
+      </ol>
+
+      <h3 id="panel-crud">2. The CRUD screen (build this ~30 times)</h3>
+      <p class="measure">
+        Every entity module — Departments, Students, Faculty, Programs, Fee Structures, Books,
+        Vehicles, and on — follows the same four-call shape. Learn it once on Departments and every
+        other list screen in the panel is the same component with different field names, which
+        Swagger gives you exactly (schema, required fields, enums) per module.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Screen action</th><th>Call</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>List (with search, pagination, filters)</td><td><code class="inline">GET /</code></td><td>Query params vary by module (<code class="inline">search</code>, <code class="inline">status</code>, foreign-key filters) — render <code class="inline">meta.totalPages</code> for pagination controls.</td></tr>
+            <tr><td>Row detail / edit form prefill</td><td><code class="inline">GET /:id</code></td><td>Not every module has this as a separate call — some list responses already carry everything a row needs.</td></tr>
+            <tr><td>Create</td><td><code class="inline">POST /</code></td><td>Body is the module's <code class="inline">*Input</code> type. A <code class="inline">422</code> means render Zod's per-field messages next to the form fields, not a toast.</td></tr>
+            <tr><td>Edit</td><td><code class="inline">PUT /:id</code></td><td>Same body shape as create, almost always.</td></tr>
+            <tr><td>Delete</td><td><code class="inline">DELETE /:id</code></td><td>A <code class="inline">409</code> here is expected, common UX — it means the row is referenced elsewhere (e.g. <code class="inline">DEPARTMENT_IN_USE</code>). Show the reason, don't treat it as a bug.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="panel-modules">3. Module-gated navigation — a real gap, not an oversight</h3>
+      <p class="measure">
+        There is currently <b>no endpoint that lists which modules a tenant has enabled</b> — see the
+        Platform admin console note in <code class="inline">CLAUDE.md</code>; that whole console
+        (tenant list, module enable/disable, plan management) isn't built yet.
+        <code class="inline">GET /institution</code> returns the tenant row, not its module list.
+        Until that exists, an admin panel has two honest options: hardcode the nav to match known plan
+        tiers and let a disabled module 403 if the tenant doesn't actually have it, or attempt the
+        first call for a section lazily and catch the 403 — its message names the missing module
+        (<code class="inline">"... ACADEMICS ..."</code> etc.) so you can render "not on your plan"
+        instead of a generic error. Neither is great; both are what's actually available today.
+      </p>
+
+      <h3 id="panel-map">4. Screen → module map</h3>
+      <p class="measure">Which Swagger tag to read for a given panel screen:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>If you're building…</th><th>…read these Swagger tags</th></tr></thead>
+          <tbody>
+            <tr><td>Login, session, MFA settings, API keys</td><td>Auth, API Keys</td></tr>
+            <tr><td>Dashboard home</td><td>Dashboard, Reports</td></tr>
+            <tr><td>Org structure (departments, programs, batches, sections, subjects, rooms, faculty, students)</td><td>Departments, Students, Faculty, Academic Years, Programs, Batches, Sections, Subjects, Rooms</td></tr>
+            <tr><td>Timetable builder</td><td>Timetable</td></tr>
+            <tr><td>Attendance, Leave, Assignments, Exams &amp; results</td><td>Attendance, Leave, Assignments, Examinations</td></tr>
+            <tr><td>Announcements &amp; the class-group message boards</td><td>Announcements, Class Groups, Notifications</td></tr>
+            <tr><td>Admissions pipeline (kanban-style board)</td><td>Admissions</td></tr>
+            <tr><td>Fee collection &amp; ledger</td><td>Fees</td></tr>
+            <tr><td>Hostel / Transport / Library ops</td><td>Hostel, Transport, Library</td></tr>
+            <tr><td>Certificates &amp; document verification</td><td>Certificates, Documents</td></tr>
+            <tr><td>Placements board</td><td>Placements</td></tr>
+            <tr><td>Roles &amp; permissions screen</td><td>RBAC</td></tr>
+            <tr><td>Audit trail viewer</td><td>Audit Logs</td></tr>
+            <tr><td>Billing / subscription settings</td><td>Billing</td></tr>
+            <tr><td>Webhooks &amp; integrations settings</td><td>Webhooks, Integrations</td></tr>
+            <tr><td>Generic approval queue</td><td>Approvals</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="panel-worked">5. Worked example: the Departments screen, end to end</h3>
+      <p class="measure">
+        This is the whole pattern from §2, with real field names, so you can copy the shape directly.
+      </p>
+      <div class="figure">
+        <div class="figure-body">
+<pre class="code"><span class="c1">// List — render the table + pagination controls</span>
+const res = await fetch(`/api/v1/departments?page=${page}&search=${q}`, {
+  headers: { Authorization: `Bearer ${token}` }, credentials: 'include',
+})
+const { data, meta } = await res.json()
+<span class="c1">// data: Department[], meta: { page, pageSize, total, totalPages }</span>
+
+<span class="c1">// Create — submit the form</span>
+const created = await fetch('/api/v1/departments', {
+  method: 'POST', credentials: 'include',
+  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: 'Computer Science', code: 'CSE', status: 'ACTIVE' }),
+})
+if (created.status === 422) {
+  const { details } = await created.json()  <span class="c1">// { code: ["Code is required"] } — map onto form fields</span>
+}
+if (created.status === 409) {
+  const { message } = await created.json()  <span class="c1">// "Department code \"CSE\" is already in use." — show inline</span>
+}
+
+<span class="c1">// Delete — confirm, then handle the "in use" guard</span>
+const deleted = await fetch(`/api/v1/departments/${id}`, {
+  method: 'DELETE', credentials: 'include', headers: { Authorization: `Bearer ${token}` },
+})
+if (deleted.status === 409) {
+  const { message } = await deleted.json()  <span class="c1">// "... still has students" — surface it, don't retry</span>
+}</pre>
+        </div>
+        <figcaption><b>Fig. 4.</b> Every other CRUD screen in the panel — Students, Faculty, Rooms, Fee Structures, Books — is this same shape against a different base path and body schema. Copy this component, change the path and the form fields.</figcaption>
       </div>
     </section>
 
     <section class="chapter" id="flows">
-      <div class="chapter-head"><span class="num">05</span><h2>Core flows</h2></div>
+      <div class="chapter-head"><span class="num">06</span><h2>Core flows</h2></div>
       <p class="measure">
         Five flows that show the shape of the rest: a lifecycle that ends in a new row elsewhere in
         the system, a ledger that recomputes itself, a state machine that refuses direct edits once
@@ -655,7 +812,7 @@ flowchart LR
   APPLIED -.->|"reject / withdraw, any stage"| RJ["REJECTED / WITHDRAWN"]
 </pre>
         </div>
-        <figcaption><b>Fig. 3.</b> <code class="inline">/advance</code> only ever moves one step; only <code class="inline">/enroll</code> can reach <code class="inline">ENROLLED</code>.</figcaption>
+        <figcaption><b>Fig. 5.</b> <code class="inline">/advance</code> only ever moves one step; only <code class="inline">/enroll</code> can reach <code class="inline">ENROLLED</code>.</figcaption>
       </div>
 
       <h3 id="flow-attendance">Attendance: lock, then only correct</h3>
@@ -676,7 +833,7 @@ flowchart LR
   PD -->|"reject"| LK
 </pre>
         </div>
-        <figcaption><b>Fig. 4.</b> No route exists to edit a locked record directly — the correction workflow is the only door.</figcaption>
+        <figcaption><b>Fig. 6.</b> No route exists to edit a locked record directly — the correction workflow is the only door.</figcaption>
       </div>
 
       <h3 id="flow-fees">Fees: a recomputed ledger, not a stored balance</h3>
@@ -701,7 +858,7 @@ flowchart TB
   WV["POST /invoices/:id/waive"] -.->|"sticky override,<br/>recompute skips it"| WD["WAIVED"]
 </pre>
         </div>
-        <figcaption><b>Fig. 5.</b> An internal ledger by design — no live payment gateway is wired up, so payments are admin-recorded.</figcaption>
+        <figcaption><b>Fig. 7.</b> An internal ledger by design — no live payment gateway is wired up, so payments are admin-recorded.</figcaption>
       </div>
 
       <h3 id="flow-notifications">Notifications: one real channel, two honest stubs</h3>
@@ -727,7 +884,7 @@ flowchart LR
   CK -->|"yes"| FL["NotificationDelivery: FAILED<br/>— config-only, reason recorded"]
 </pre>
         </div>
-        <figcaption><b>Fig. 6.</b> A <code class="inline">FAILED</code> row with a reason beats a silent no-op — anyone querying deliveries sees exactly what didn't happen and why.</figcaption>
+        <figcaption><b>Fig. 8.</b> A <code class="inline">FAILED</code> row with a reason beats a silent no-op — anyone querying deliveries sees exactly what didn't happen and why.</figcaption>
       </div>
 
       <h3 id="flow-webhooks">Webhooks: signed, and checked twice</h3>
@@ -754,12 +911,12 @@ sequenceDiagram
   S->>S: WebhookDelivery row: DELIVERED or FAILED
 </pre>
         </div>
-        <figcaption><b>Fig. 7.</b> No retry queue yet — one inline attempt per event, logged either way.</figcaption>
+        <figcaption><b>Fig. 9.</b> No retry queue yet — one inline attempt per event, logged either way.</figcaption>
       </div>
     </section>
 
     <section class="chapter" id="modules">
-      <div class="chapter-head"><span class="num">06</span><h2>Module reference</h2></div>
+      <div class="chapter-head"><span class="num">07</span><h2>Module reference</h2></div>
       <p class="measure">
         Every route sits behind two gates: a <span class="badge gate">MODULE</span> the tenant must
         have enabled, and a permission the caller's role must hold. This is the index; full
@@ -779,16 +936,16 @@ sequenceDiagram
             <tr><td>Institution</td><td><span class="badge gate">CORE</span></td><td>Singleton tenant settings — name, brand color.</td></tr>
             <tr><td>RBAC</td><td><span class="badge gate">CORE</span></td><td>Read roles/permissions; assign a user's role.</td></tr>
             <tr><td>Audit Logs</td><td><span class="badge gate">CORE</span></td><td>Every mutation, written automatically, admin-only to read.</td></tr>
-            <tr><td>Attendance</td><td><span class="badge gate">ACADEMICS</span></td><td>Session lock + correction/approval — see Fig. 4.</td></tr>
+            <tr><td>Attendance</td><td><span class="badge gate">ACADEMICS</span></td><td>Session lock + correction/approval — see Fig. 6.</td></tr>
             <tr><td>Leave</td><td><span class="badge gate">ACADEMICS</span></td><td>Requests that, once approved, write back into Attendance.</td></tr>
             <tr><td>Assignments</td><td><span class="badge gate">ACADEMICS</span></td><td>Draft → publish → close, with submissions and grading.</td></tr>
             <tr><td>Examinations</td><td><span class="badge gate">EXAMINATION</span></td><td>Exam → schedule → marks (draft→submit→verify→publish) → SGPA/CGPA.</td></tr>
-            <tr><td>Announcements</td><td><span class="badge gate">COMMUNICATION</span></td><td>Scoped to college / department / program / batch / section — see Fig. 6.</td></tr>
+            <tr><td>Announcements</td><td><span class="badge gate">COMMUNICATION</span></td><td>Scoped to college / department / program / batch / section — see Fig. 8.</td></tr>
             <tr><td>Documents</td><td><span class="badge gate">CORE</span></td><td>Generic verified-document metadata (fileUrl is a reference, no upload).</td></tr>
             <tr><td>Reports</td><td><span class="badge gate">CORE</span></td><td>Read-only aggregations — strength, attendance, performance, financials, dropout.</td></tr>
             <tr><td>Import / Export</td><td><span class="badge gate">CORE</span></td><td>Student CSV — preview, commit, export.</td></tr>
-            <tr><td>Admissions</td><td><span class="badge gate">ADMISSIONS</span></td><td>Applicant lifecycle through enrollment — see Fig. 3.</td></tr>
-            <tr><td>Fees</td><td><span class="badge gate">FINANCE</span></td><td>Internal invoicing ledger — see Fig. 5.</td></tr>
+            <tr><td>Admissions</td><td><span class="badge gate">ADMISSIONS</span></td><td>Applicant lifecycle through enrollment — see Fig. 5.</td></tr>
+            <tr><td>Fees</td><td><span class="badge gate">FINANCE</span></td><td>Internal invoicing ledger — see Fig. 7.</td></tr>
             <tr><td>Hostel / Transport</td><td><span class="badge gate">HOSTEL_TRANSPORT</span></td><td>Room and route allocation, with capacity checks.</td></tr>
             <tr><td>Library</td><td><span class="badge gate">LIBRARY</span></td><td>Issue/return with computed late fines.</td></tr>
             <tr><td>Certificates</td><td><span class="badge gate">CORE</span></td><td>Issuance workflow with a publicly verifiable code.</td></tr>
@@ -796,10 +953,10 @@ sequenceDiagram
             <tr><td>Placements</td><td><span class="badge gate">PLACEMENT_ALUMNI</span></td><td>Companies → openings → applications, CGPA-gated.</td></tr>
             <tr><td>Billing</td><td><span class="badge gate">CORE</span></td><td>The tenant's own subscription against a seeded plan catalogue.</td></tr>
             <tr><td>API Keys</td><td><span class="badge gate">CORE</span></td><td>Authenticate as their creator — see §3.</td></tr>
-            <tr><td>Webhooks</td><td><span class="badge gate">CORE</span></td><td>SSRF-guarded, signed outbound events — see Fig. 7.</td></tr>
+            <tr><td>Webhooks</td><td><span class="badge gate">CORE</span></td><td>SSRF-guarded, signed outbound events — see Fig. 9.</td></tr>
             <tr><td>Integrations</td><td><span class="badge gate">CORE</span></td><td>Config only — enabling one never places a live call.</td></tr>
             <tr><td>Approvals</td><td><span class="badge gate">CORE</span></td><td>A minimal generic approve/reject primitive for future features.</td></tr>
-            <tr><td>Notifications</td><td><span class="badge gate">CORE</span></td><td>Self-account inbox — see Fig. 6.</td></tr>
+            <tr><td>Notifications</td><td><span class="badge gate">CORE</span></td><td>Self-account inbox — see Fig. 8.</td></tr>
             <tr><td>Class Groups</td><td><span class="badge gate">CORE</span></td><td>Every Section's own message board — membership derived, not stored.</td></tr>
           </tbody>
         </table>
@@ -807,7 +964,7 @@ sequenceDiagram
     </section>
 
     <section class="chapter" id="conventions">
-      <div class="chapter-head"><span class="num">07</span><h2>Conventions &amp; errors</h2></div>
+      <div class="chapter-head"><span class="num">08</span><h2>Conventions &amp; errors</h2></div>
       <div class="two-col">
         <div>
           <h3>Every list looks the same</h3>
