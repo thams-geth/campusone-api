@@ -127,4 +127,82 @@ describe('timetable routes', () => {
     })
     expect(res.status).toBe(422)
   })
+
+  describe('period slots (the shared bell schedule)', () => {
+    let periodId: string
+
+    it('creates a period', async () => {
+      const res = await authed(request(app).post('/api/v1/timetable/periods')).send({
+        label: 'Period 1',
+        type: 'TEACHING',
+        startTime: '09:00',
+        endTime: '09:50',
+      })
+      expect(res.status).toBe(201)
+      expect(res.body.label).toBe('Period 1')
+      periodId = res.body.id
+    })
+
+    it('rejects a period that overlaps an existing one', async () => {
+      const res = await authed(request(app).post('/api/v1/timetable/periods')).send({
+        label: 'Break',
+        type: 'BREAK',
+        startTime: '09:30',
+        endTime: '09:40',
+      })
+      expect(res.status).toBe(409)
+      expect(res.body.code).toBe('PERIOD_OVERLAP')
+    })
+
+    it('creates a non-overlapping period immediately after', async () => {
+      const res = await authed(request(app).post('/api/v1/timetable/periods')).send({
+        label: 'Break',
+        type: 'BREAK',
+        startTime: '09:50',
+        endTime: '10:00',
+      })
+      expect(res.status).toBe(201)
+    })
+
+    it('lists periods ordered by start time', async () => {
+      const res = await authed(request(app).get('/api/v1/timetable/periods'))
+      expect(res.status).toBe(200)
+      expect(res.body.map((p: { label: string }) => p.label)).toEqual(['Period 1', 'Break'])
+    })
+
+    it('updating a period still rejects an overlap with a sibling', async () => {
+      const res = await authed(request(app).put(`/api/v1/timetable/periods/${periodId}`)).send({
+        label: 'Period 1',
+        type: 'TEACHING',
+        startTime: '09:00',
+        endTime: '09:55',
+      })
+      expect(res.status).toBe(409)
+      expect(res.body.code).toBe('PERIOD_OVERLAP')
+    })
+
+    it('updating a period against itself (unchanged range) succeeds', async () => {
+      const res = await authed(request(app).put(`/api/v1/timetable/periods/${periodId}`)).send({
+        label: 'Period 1 (renamed)',
+        type: 'TEACHING',
+        startTime: '09:00',
+        endTime: '09:50',
+      })
+      expect(res.status).toBe(200)
+      expect(res.body.label).toBe('Period 1 (renamed)')
+    })
+
+    it('deletes a period', async () => {
+      const res = await authed(request(app).delete(`/api/v1/timetable/periods/${periodId}`))
+      expect(res.status).toBe(204)
+
+      const list = await authed(request(app).get('/api/v1/timetable/periods'))
+      expect(list.body.find((p: { id: string }) => p.id === periodId)).toBeUndefined()
+    })
+
+    it('404s deleting an unknown period', async () => {
+      const res = await authed(request(app).delete('/api/v1/timetable/periods/does-not-exist'))
+      expect(res.status).toBe(404)
+    })
+  })
 })

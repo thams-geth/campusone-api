@@ -2,6 +2,7 @@ import { ApiError } from '../../utils/ApiError'
 import { prisma } from '../../prisma/client'
 import { logActivity } from '../shared/activityLog'
 import type { ListTimetableQuery, TimetableEntryInput } from './timetable.schema'
+import { timesOverlap } from './timeOverlap'
 
 export async function listTimetableEntries(params: ListTimetableQuery) {
   const { page, pageSize, sectionId, facultyId, roomId, dayOfWeek } = params
@@ -43,13 +44,6 @@ async function assertRelationsExist(input: TimetableEntryInput) {
   if (!subject) throw ApiError.badRequest('Subject not found.', { subjectId: ['Invalid subject'] })
   if (!faculty) throw ApiError.badRequest('Faculty member not found.', { facultyId: ['Invalid faculty'] })
   if (!room) throw ApiError.badRequest('Room not found.', { roomId: ['Invalid room'] })
-}
-
-// "HH:mm" strings sort lexicographically the same as chronologically,
-// so plain string comparison is enough to detect overlap — no need to
-// parse into minutes.
-function timesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
-  return aStart < bEnd && bStart < aEnd
 }
 
 /** Faculty/room/section double-booking check (roadmap #6's "conflict detection"). */
