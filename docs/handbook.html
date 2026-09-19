@@ -524,6 +524,16 @@ sequenceDiagram
         checks — rather than carrying its own separate scope system. One less authorization model
         to keep in sync.
       </div>
+      <div class="callout">
+        <b>Forgot password, honestly.</b> <code class="inline">POST /auth/forgot-password</code>
+        never reveals whether an email matched an account, and issues a single-use, 30-minute
+        <code class="inline">PasswordResetToken</code> when it does. Nothing in this codebase can
+        actually send that email yet — the attempt is recorded <code class="inline">FAILED</code>,
+        same as every other notification channel — so the response also returns the raw token
+        directly, but <i>only outside production</i>. Both <code class="inline">reset-password</code>
+        and <code class="inline">change-password</code> revoke every other active session for the
+        user.
+      </div>
     </section>
 
     <section class="chapter" id="roles">
@@ -927,12 +937,12 @@ sequenceDiagram
           <thead><tr><th>Module</th><th>Gate</th><th>What it's for</th></tr></thead>
           <tbody>
             <tr><td>Departments</td><td><span class="badge gate">CORE</span></td><td>The academic org chart everything else hangs off.</td></tr>
-            <tr><td>Students</td><td><span class="badge gate">CORE</span></td><td>The core roster — profile, department, section, status.</td></tr>
+            <tr><td>Students</td><td><span class="badge gate">CORE</span></td><td>The core roster — profile, department, section, status; <code>/:id/360</code> aggregates attendance, fees, hostel/transport, library, documents, leave.</td></tr>
             <tr><td>Dashboard</td><td><span class="badge gate">CORE</span></td><td>Read-only summary counts, enrollment trend, activity feed.</td></tr>
             <tr><td>Academic Years / Programs / Batches / Sections / Subjects</td><td><span class="badge gate">CORE</span></td><td>The hierarchy a student sits inside: year → program → batch → section → subject.</td></tr>
-            <tr><td>Faculty</td><td><span class="badge gate">CORE</span></td><td>Employee profile <i>and</i> login account, created together.</td></tr>
+            <tr><td>Faculty</td><td><span class="badge gate">CORE</span></td><td>Employee profile <i>and</i> login account, created together; <code>/:id/360</code> aggregates teaching load, timetable, attendance sessions, assignments.</td></tr>
             <tr><td>Rooms</td><td><span class="badge gate">CORE</span></td><td>Flat room catalogue — no building/floor hierarchy.</td></tr>
-            <tr><td>Timetable</td><td><span class="badge gate">ACADEMICS</span></td><td>Weekly schedule with faculty/room/section conflict detection.</td></tr>
+            <tr><td>Timetable</td><td><span class="badge gate">ACADEMICS</span></td><td>Weekly schedule with faculty/room/section conflict detection; <code>/periods</code> configures the shared bell schedule the admin console's visual grid is drawn against.</td></tr>
             <tr><td>Institution</td><td><span class="badge gate">CORE</span></td><td>Singleton tenant settings — name, brand color.</td></tr>
             <tr><td>RBAC</td><td><span class="badge gate">CORE</span></td><td>Read roles/permissions; assign a user's role.</td></tr>
             <tr><td>Audit Logs</td><td><span class="badge gate">CORE</span></td><td>Every mutation, written automatically, admin-only to read.</td></tr>
@@ -958,6 +968,7 @@ sequenceDiagram
             <tr><td>Approvals</td><td><span class="badge gate">CORE</span></td><td>A minimal generic approve/reject primitive for future features.</td></tr>
             <tr><td>Notifications</td><td><span class="badge gate">CORE</span></td><td>Self-account inbox — see Fig. 8.</td></tr>
             <tr><td>Class Groups</td><td><span class="badge gate">CORE</span></td><td>Every Section's own message board — membership derived, not stored.</td></tr>
+            <tr><td>Search</td><td><span class="badge gate">CORE</span></td><td>One query across students, faculty, and the academic hierarchy — each category gated by the caller's own read permission, not a single router-level check.</td></tr>
           </tbody>
         </table>
       </div>

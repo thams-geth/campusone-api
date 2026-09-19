@@ -66,12 +66,17 @@ All routes except `/health*`, `POST /api/v1/auth/login`, and `POST /api/v1/auth/
 | `POST /refresh` | refresh cookie | — | `200 { token }`, rotates the cookie |
 | `POST /logout` | refresh cookie | — | `204` (no body), revokes + clears the cookie |
 | `GET /me` | Bearer token | — | `200 { user: AuthUser }` |
+| `POST /change-password` | Bearer token | `{ currentPassword, newPassword }` | `204` |
+| `POST /forgot-password` | none | `{ email }` | `200 { message, resetToken? }` |
+| `POST /reset-password` | none | `{ token, newPassword }` | `204` |
 
 ```ts
 AuthUser = { id, tenantId, name, email, role: string, isActive, mfaEnabled }
 ```
 
 Errors: `401` on bad credentials, an inactive account, a locked account, or an expired/reused refresh token; `429` once the rate limit is hit. If the account has MFA enabled, a missing/wrong `mfaCode` fails with `401 MFA_REQUIRED`/`MFA_INVALID` **before** any token is issued — no separate challenge-token step; the client just re-submits the same `POST /login` call with the code filled in.
+
+**Password change & reset** — `newPassword` is validated `min(8)` on both routes. `change-password` verifies `currentPassword` first (`401` if wrong) and revokes every `RefreshToken` for the user (forces re-login on every other device/tab; the caller's current access token stays valid until its natural expiry, same as logout). `forgot-password` never reveals whether the email matched an account — the response message is identical either way; when it does match, a `PasswordResetToken` is issued (30 min TTL, single-use, stored hashed like `RefreshToken`) and an `EMAIL` notification is *attempted* through the same best-effort `dispatchNotification` every other module uses (recorded `FAILED` since no provider is configured anywhere in this codebase yet) — because nothing actually delivers the email, the response also includes the raw `resetToken` directly, but **only outside production** (`env.isProduction`), mirroring how `errorHandler.ts` already hides stack traces in prod. `reset-password` consumes the token (`400 INVALID_RESET_TOKEN` if unknown, expired, or already used) and, like change-password, revokes every `RefreshToken` for the user.
 
 **MFA (TOTP, RFC 6238)** — `Authorization: Bearer` required for all of these:
 
@@ -118,6 +123,7 @@ Permissions: `STUDENT_READ` / `_CREATE` / `_UPDATE` / `_DELETE`.
 |---|---|---|
 | `GET /` | query: `page?, pageSize?, search?, departmentId?, status?` | `200` paginated `Student[]` |
 | `GET /:id` | — | `200 Student` |
+| `GET /:id/360` | — | `200 Student360` — see below |
 | `POST /` | body: `StudentInput` | `201 Student` |
 | `PUT /:id` | body: `StudentInput` | `200 Student` |
 | `DELETE /:id` | — | `204` |
@@ -133,6 +139,24 @@ Student = StudentInput & { id, tenantId, createdAt, updatedAt }
 ```
 
 `422 INVALID_DEPARTMENT` / `DEPARTMENT_INACTIVE` / `INVALID_SECTION`; `409 DUPLICATE_EMAIL` / `DUPLICATE_ROLL_NUMBER`.
+
+**Student 360** (`GET /:id/360`, permission `STUDENT_READ`) — a single read-only aggregation of everything this backend tracks about one student, for the admin dashboard's profile view. Built with direct Prisma queries (not by reusing other modules' paginated list endpoints, which are shaped for their own list pages, not "everything for this id") so it stays one round trip:
+
+```ts
+Student360 = {
+  student: Student & { departmentName: string, sectionName: string | null },
+  attendance: { totalRecords, presentCount, absentCount, lateCount, excusedCount, onLeaveCount, attendancePercentage: number },
+  academics: { cgpa: number | null }, // null until any marks are published — see Examinations' getCgpaForStudent
+  fees: { invoiceCount, totalInvoiced, totalOutstanding, overdueCount: number }, // totalOutstanding uses the same ledger math as Fees' own status recompute, so it always agrees with that module's numbers
+  hostelAllocation: { hostelName, roomNumber, bedNumber, status } | null, // most recent, any status
+  transportAllocation: { routeName, stopName, status } | null,           // most recent, any status
+  library: { activeIssueCount, overdueIssueCount: number },
+  documents: Array<{ id, type, status, createdAt }>,              // 10 most recent
+  certificateRequests: Array<{ id, certificateTypeId, status, createdAt }>, // 10 most recent
+  activities: Array<{ id, type, title, date }>,                   // 10 most recent, by activity date
+  leave: { pendingCount, approvedCount, rejectedCount: number, recent: Array<{ id, leaveTypeId, startDate, endDate, status, createdAt }> }, // recent = 5 most recent
+}
+```
 
 ### Dashboard (`/api/v1/dashboard`) — module `CORE`
 
@@ -223,7 +247,7 @@ SubjectInput = { programId: string, semesterNumber: number /* 1–12 */, code: s
 
 Permissions: `FACULTY_READ` / `_CREATE` / `_UPDATE` / `_DELETE`. A faculty member is both an employee profile and a login-capable account — creating one provisions the underlying `User` (role `FACULTY`) too.
 
-Standard `GET /`, `GET /:id`, `POST /`, `PUT /:id`, `DELETE /:id`.
+Standard `GET /`, `GET /:id`, `GET /:id/360`, `POST /`, `PUT /:id`, `DELETE /:id`.
 
 ```ts
 // POST — provisions the login account
@@ -234,6 +258,19 @@ Faculty = FacultyUpdateInput & { id, tenantId, name, email, isActive, createdAt,
 ```
 
 `409 DUPLICATE_EMAIL` / `DUPLICATE_EMPLOYEE_CODE`. `DELETE` deactivates the linked account (`isActive: false`) rather than deleting it, and `409 FACULTY_IN_USE` if timetable entries still reference them.
+
+**Faculty 360** (`GET /:id/360`, permission `FACULTY_READ`) — same idea as Student 360, reusing the existing `toFacultyDto` flattening:
+
+```ts
+Faculty360 = {
+  faculty: Faculty & { departmentName: string },
+  teaching: { subjectCount: number, subjects: Array<{ id, code, name, semesterNumber, credits }> },
+  timetable: { weeklyPeriods: number, entries: Array<{ id, dayOfWeek, startTime, endTime, sectionName, subjectName, roomName }> }, // all entries, not capped
+  attendance: { sessionsTaken: number, recentSessions: Array<{ id, date, status, sectionName, subjectName }> }, // recentSessions = 10 most recent
+  assignments: { count: number, recent: Array<{ id, title, status, dueDate }> }, // recent = 5 most recent
+  leaveReviewed: { count: number }, // LeaveRequest rows this faculty member has reviewed, i.e. reviewedByUserId = their own userId
+}
+```
 
 ### Rooms (`/api/v1/rooms`) — module `CORE`
 
@@ -268,6 +305,24 @@ TimetableEntryInput = {
 ```
 
 `400` on any invalid relation id. Conflict detection on create/update — `409 FACULTY_CONFLICT` / `ROOM_CONFLICT` / `SECTION_CONFLICT` if the same faculty/room/section already has an overlapping entry that day.
+
+**Period slots** (`/timetable/periods`) — the institution's shared daily bell schedule (Period 1, Break, Period 2, ..., Lunch, ...), one flat tenant-wide list ordered by `startTime` (chronological order *is* display order — there's no separate position field). Reuses the same `TIMETABLE_*` permissions above; not a separate module.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /periods` | — | `200 PeriodSlot[]`, ordered by `startTime` — not paginated, this is a small complete list |
+| `POST /periods` | body: `PeriodSlotInput` | `201 PeriodSlot` |
+| `PUT /periods/:id` | body: `PeriodSlotInput` | `200 PeriodSlot` |
+| `DELETE /periods/:id` | — | `204` — free to delete, nothing has a hard FK to a period |
+
+```ts
+PeriodSlotInput = { label: string, type: "TEACHING"|"BREAK"|"LUNCH", startTime: string, endTime: string } // "HH:mm" 24h, endTime > startTime
+PeriodSlot = PeriodSlotInput & { id, tenantId, createdAt, updatedAt }
+```
+
+`409 PERIOD_OVERLAP` if the new/updated range overlaps any other period slot (any type) — the response names the conflicting period, e.g. `{ message: "That time overlaps \"Period 1\" (09:00–09:50).", code: "PERIOD_OVERLAP" }`.
+
+`TimetableEntry` deliberately isn't linked to a period by id — the admin frontend's visual grid (`TimetableGrid`) matches an entry to the period row(s) it covers purely by comparing `[startTime, endTime)` overlap, the same math this module's own conflict detection already uses. A lab spanning three periods back-to-back is just one entry whose time range happens to cover three period rows, rendered as a single merged cell — no schema link required, and the entry create/update contract above is completely unchanged.
 
 ### Institution (`/api/v1/institution`) — module `CORE`
 
@@ -626,6 +681,24 @@ Permissions: `CLASS_GROUP_READ`/`CLASS_GROUP_POST` (STUDENT/FACULTY — membersh
 | `POST /:sectionId/messages` | `{ body }` | `201` — fans out an in-app `CLASS_GROUP_MESSAGE` notification to every other member (active students in the section + faculty who teach it, via Timetable) |
 
 `404` for an unknown section. `403` if the caller is neither a member (a student in that section, or a faculty member with a `TimetableEntry` there) nor holds `CLASS_GROUP_MANAGE`.
+
+### Global Search (`/api/v1/search`) — module `CORE`
+
+No single permission gate at the router level — unlike every other module, which categories run at all depends on which permissions the caller's role holds, checked per-category inside the service via the same `getPermissionsForRole` cache `requirePermission` itself uses.
+
+| Route | Request | Response |
+|---|---|---|
+| `GET /` | query: `q` (string, `min(2)`) | `200 GlobalSearchResult` |
+
+```ts
+GlobalSearchResult = {
+  students: SearchHit[], faculty: SearchHit[], departments: SearchHit[],
+  programs: SearchHit[], batches: SearchHit[], sections: SearchHit[], subjects: SearchHit[],
+}
+SearchHit = { id, type: "student"|"faculty"|"department"|"program"|"batch"|"section"|"subject", label: string, subtitle: string }
+```
+
+Case-insensitive partial match per category (students: name/email/roll number; faculty: name/email/employee code; the rest: name/code), capped at 8 results each, newest-first. A category the caller's role can't read (missing `STUDENT_READ`/`FACULTY_READ`/`DEPARTMENT_READ`/`PROGRAM_READ`/`BATCH_READ`/`SECTION_READ`/`SUBJECT_READ` respectively) always comes back as `[]`, never an omitted key — the response shape is fixed regardless of role. `422` if `q` is shorter than 2 characters.
 
 ---
 

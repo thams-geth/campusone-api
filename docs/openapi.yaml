@@ -107,6 +107,8 @@ tags:
     description: "Module: CORE. Permission NOTIFICATION_READ. Self-account-management only."
   - name: Class Groups
     description: "Module: CORE. Permissions CLASS_GROUP_READ/_POST/_MANAGE. A Section's message board."
+  - name: Search
+    description: "Module: CORE. No single permission gate — which of the 7 categories run depends on the caller's own granted permissions, checked per-category."
 
 security:
   - bearerAuth: []
@@ -281,6 +283,84 @@ paths:
                     ipAddress: { type: string, nullable: true }
                     userAgent: { type: string, nullable: true }
                     createdAt: { type: string, format: date-time }
+  /api/v1/auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change the caller's own password
+      description: Verifies `currentPassword` first, then revokes every RefreshToken for the user (forces re-login on every other device; the caller's current access token stays valid until it naturally expires).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "204": { description: Changed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request a password reset
+      description: |
+        Rate-limited (20 req/15min). Never reveals whether the email matched an account — the
+        response message is identical either way. When it does match, issues a single-use
+        PasswordResetToken (30 min TTL) and attempts an EMAIL notification (recorded FAILED —
+        no provider is configured anywhere in this codebase). Because nothing actually delivers
+        the email, `resetToken` is also returned directly, but only outside production.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200":
+          description: OK — same response whether or not the email matched an account
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  resetToken: { type: string, description: "Dev/test only (!env.isProduction) — never present in production" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Complete a password reset
+      description: Rate-limited (20 req/15min). Consumes the token (single-use) and revokes every RefreshToken for the user, same as change-password.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        "204": { description: Reset }
+        "400":
+          description: Unknown, expired, or already-used token
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              examples:
+                invalidToken: { value: { message: "This reset link is invalid or has expired.", code: INVALID_RESET_TOKEN } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
 
   /api/v1/departments:
     get:
@@ -381,6 +461,15 @@ paths:
       parameters: [{ $ref: "#/components/parameters/PathId" }]
       responses:
         "204": { description: Deleted }
+  /api/v1/students/{id}/360:
+    get:
+      tags: [Students]
+      summary: Student 360 — everything tracked about one student, in one call
+      description: Read-only aggregation for the admin dashboard's profile view. Built with direct Prisma queries, not by composing other modules' paginated list endpoints.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Student360" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/dashboard/summary:
     get:
@@ -659,6 +748,15 @@ paths:
       description: Sets isActive false on the linked account rather than deleting it.
       parameters: [{ $ref: "#/components/parameters/PathId" }]
       responses: { "204": { description: Deactivated }, "409": { description: "FACULTY_IN_USE — still referenced by timetable entries" } }
+  /api/v1/faculty/{id}/360:
+    get:
+      tags: [Faculty]
+      summary: Faculty 360 — everything tracked about one faculty member, in one call
+      description: Read-only aggregation for the admin dashboard's profile view, same idea as Student 360.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Faculty360" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/rooms:
     get:
@@ -736,6 +834,45 @@ paths:
     get: { tags: [Timetable], summary: Get a timetable entry, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK }, "404": { $ref: "#/components/responses/NotFound" } } }
     put: { tags: [Timetable], summary: Update a timetable entry, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "200": { description: OK } } }
     delete: { tags: [Timetable], summary: Delete a timetable entry, parameters: [{ $ref: "#/components/parameters/PathId" }], responses: { "204": { description: Deleted } } }
+  /api/v1/timetable/periods:
+    get:
+      tags: [Timetable]
+      summary: List the institution's shared bell schedule (Period 1, Break, Period 2, ...)
+      description: Ordered by startTime — chronological order is display order. Not paginated, this is a small complete list.
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/PeriodSlot" } } } } }
+    post:
+      tags: [Timetable]
+      summary: Add a period, break, or lunch slot
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PeriodSlotInput" } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/PeriodSlot" } } } }
+        "409":
+          description: PERIOD_OVERLAP — the range overlaps an existing period slot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              examples:
+                overlap: { value: { message: "That time overlaps \"Period 1\" (09:00–09:50).", code: PERIOD_OVERLAP } }
+        "422": { $ref: "#/components/responses/ValidationError" }
+  /api/v1/timetable/periods/{id}:
+    put:
+      tags: [Timetable]
+      summary: Update a period slot
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/PeriodSlotInput" } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/PeriodSlot" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: PERIOD_OVERLAP }
+    delete:
+      tags: [Timetable]
+      summary: Delete a period slot
+      description: Free to delete — nothing has a hard foreign key to a period slot.
+      parameters: [{ $ref: "#/components/parameters/PathId" }]
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/v1/institution:
     get:
@@ -1892,6 +2029,20 @@ paths:
               schema:
                 type: object
                 properties: { id: { type: string }, sectionId: { type: string }, body: { type: string }, createdAt: { type: string, format: date-time }, author: { type: object, properties: { id: { type: string }, name: { type: string } } } }
+
+  /api/v1/search:
+    get:
+      tags: [Search]
+      summary: Search across students, faculty, and academic entities
+      description: A category the caller's role can't read (missing the matching *_READ permission) always comes back `[]`, never an omitted key.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string, minLength: 2 }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GlobalSearchResult" } } } }
+        "422": { $ref: "#/components/responses/ValidationError" }
         "403": { description: "Not a member of this section, and doesn't hold CLASS_GROUP_MANAGE" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -2053,6 +2204,165 @@ components:
     Student:
       allOf:
         - { $ref: "#/components/schemas/StudentInput" }
+        - type: object
+          properties: { id: { type: string }, tenantId: { type: string }, createdAt: { type: string, format: date-time }, updatedAt: { type: string, format: date-time } }
+
+    Student360:
+      type: object
+      properties:
+        student:
+          allOf:
+            - { $ref: "#/components/schemas/Student" }
+            - type: object
+              properties: { departmentName: { type: string }, sectionName: { type: string, nullable: true } }
+        attendance:
+          type: object
+          properties:
+            totalRecords: { type: integer }
+            presentCount: { type: integer }
+            absentCount: { type: integer }
+            lateCount: { type: integer }
+            excusedCount: { type: integer }
+            onLeaveCount: { type: integer }
+            attendancePercentage: { type: number }
+        academics:
+          type: object
+          properties: { cgpa: { type: number, nullable: true, description: "null until any marks are published" } }
+        fees:
+          type: object
+          properties:
+            invoiceCount: { type: integer }
+            totalInvoiced: { type: number }
+            totalOutstanding: { type: number, description: "Uses the same ledger math as Fees' own status recompute" }
+            overdueCount: { type: integer }
+        hostelAllocation:
+          type: object
+          nullable: true
+          properties: { hostelName: { type: string }, roomNumber: { type: string }, bedNumber: { type: integer }, status: { type: string } }
+        transportAllocation:
+          type: object
+          nullable: true
+          properties: { routeName: { type: string }, stopName: { type: string }, status: { type: string } }
+        library:
+          type: object
+          properties: { activeIssueCount: { type: integer }, overdueIssueCount: { type: integer } }
+        documents:
+          type: array
+          items: { type: object, properties: { id: { type: string }, type: { type: string }, status: { type: string }, createdAt: { type: string, format: date-time } } }
+          description: 10 most recent
+        certificateRequests:
+          type: array
+          items: { type: object, properties: { id: { type: string }, certificateTypeId: { type: string }, status: { type: string }, createdAt: { type: string, format: date-time } } }
+          description: 10 most recent
+        activities:
+          type: array
+          items: { type: object, properties: { id: { type: string }, type: { type: string }, title: { type: string }, date: { type: string, format: date-time } } }
+          description: 10 most recent, by activity date
+        leave:
+          type: object
+          properties:
+            pendingCount: { type: integer }
+            approvedCount: { type: integer }
+            rejectedCount: { type: integer }
+            recent:
+              type: array
+              items: { type: object, properties: { id: { type: string }, leaveTypeId: { type: string }, startDate: { type: string, format: date }, endDate: { type: string, format: date }, status: { type: string }, createdAt: { type: string, format: date-time } } }
+              description: 5 most recent
+
+    Faculty360:
+      type: object
+      properties:
+        faculty:
+          type: object
+          description: The flattened Faculty DTO (Faculty + linked User's name/email/isActive), plus departmentName.
+          properties:
+            id: { type: string }
+            tenantId: { type: string }
+            userId: { type: string }
+            employeeCode: { type: string }
+            departmentId: { type: string }
+            departmentName: { type: string }
+            designation: { type: string }
+            qualification: { type: string, nullable: true }
+            experienceYears: { type: integer }
+            joiningDate: { type: string, format: date }
+            status: { type: string, enum: [ACTIVE, INACTIVE] }
+            name: { type: string }
+            email: { type: string, format: email }
+            isActive: { type: boolean }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+        teaching:
+          type: object
+          properties:
+            subjectCount: { type: integer }
+            subjects:
+              type: array
+              items: { type: object, properties: { id: { type: string }, code: { type: string }, name: { type: string }, semesterNumber: { type: integer }, credits: { type: integer } } }
+        timetable:
+          type: object
+          properties:
+            weeklyPeriods: { type: integer }
+            entries:
+              type: array
+              description: All entries, not capped
+              items:
+                type: object
+                properties: { id: { type: string }, dayOfWeek: { type: string }, startTime: { type: string }, endTime: { type: string }, sectionName: { type: string }, subjectName: { type: string }, roomName: { type: string } }
+        attendance:
+          type: object
+          properties:
+            sessionsTaken: { type: integer }
+            recentSessions:
+              type: array
+              description: 10 most recent
+              items:
+                type: object
+                properties: { id: { type: string }, date: { type: string, format: date }, status: { type: string }, sectionName: { type: string }, subjectName: { type: string } }
+        assignments:
+          type: object
+          properties:
+            count: { type: integer }
+            recent:
+              type: array
+              description: 5 most recent
+              items: { type: object, properties: { id: { type: string }, title: { type: string }, status: { type: string }, dueDate: { type: string, format: date-time } } }
+        leaveReviewed:
+          type: object
+          properties: { count: { type: integer, description: "LeaveRequest rows reviewedByUserId = this faculty member's own userId" } }
+
+    GlobalSearchResult:
+      type: object
+      description: Every key is always present; a category the caller's role can't read comes back as an empty array.
+      properties:
+        students: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        faculty: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        departments: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        programs: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        batches: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        sections: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+        subjects: { type: array, items: { $ref: "#/components/schemas/SearchHit" } }
+
+    SearchHit:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [student, faculty, department, program, batch, section, subject] }
+        label: { type: string }
+        subtitle: { type: string }
+
+    PeriodSlotInput:
+      type: object
+      required: [label, type, startTime, endTime]
+      properties:
+        label: { type: string, maxLength: 60, example: "Period 1" }
+        type: { type: string, enum: [TEACHING, BREAK, LUNCH] }
+        startTime: { type: string, example: "09:00", description: "HH:mm 24h" }
+        endTime: { type: string, example: "09:50" }
+
+    PeriodSlot:
+      allOf:
+        - { $ref: "#/components/schemas/PeriodSlotInput" }
         - type: object
           properties: { id: { type: string }, tenantId: { type: string }, createdAt: { type: string, format: date-time }, updatedAt: { type: string, format: date-time } }
 
