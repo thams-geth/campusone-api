@@ -8,6 +8,7 @@ export const facultyRouter = Router()
 facultyRouter.use(requireAuth, requireModule('CORE'))
 
 facultyRouter.get('/', requirePermission('FACULTY_READ'), facultyController.list)
+facultyRouter.get('/:id/360', requirePermission('FACULTY_READ'), facultyController.get360)
 facultyRouter.get('/:id', requirePermission('FACULTY_READ'), facultyController.getById)
 facultyRouter.post('/', requirePermission('FACULTY_CREATE'), facultyController.create)
 facultyRouter.put('/:id', requirePermission('FACULTY_UPDATE'), facultyController.update)

@@ -1,7 +1,23 @@
 import request from 'supertest'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createApp } from '../../app'
-import { createTestDepartment, createTestTenant, rawTestPrisma, setUpAuthenticatedTenant, shortId } from '../../test/helpers'
+import {
+  createTestAcademicYear,
+  createTestBatch,
+  createTestDepartment,
+  createTestFaculty,
+  createTestProgram,
+  createTestRoom,
+  createTestSection,
+  createTestStudentUser,
+  createTestTenant,
+  createTestTimetableEntry,
+  enableModule,
+  rawTestPrisma,
+  setUpAuthenticatedTenant,
+  shortId,
+  TEST_PASSWORD,
+} from '../../test/helpers'
 
 const app = createApp()
 
@@ -108,5 +124,124 @@ describe('faculty routes', () => {
 
     const loginRes = await request(app).post('/api/v1/auth/login').send({ email, password: 'Passw0rd!' })
     expect(loginRes.status).toBe(401)
+  })
+
+  describe('GET /faculty/:id/360', () => {
+    let facultyId: string
+    let facultyToken: string
+
+    beforeAll(async () => {
+      await enableModule(tenant.id, 'ACADEMICS')
+
+      const program = await createTestProgram(tenant.id, departmentId)
+      const academicYear = await createTestAcademicYear(tenant.id)
+      const batch = await createTestBatch(tenant.id, program.id, academicYear.id)
+      const section = await createTestSection(tenant.id, batch.id)
+      const room = await createTestRoom(tenant.id)
+
+      const faculty = await createTestFaculty(tenant.id, departmentId)
+      facultyId = faculty.id
+      facultyToken = (
+        await request(app).post('/api/v1/auth/login').send({ email: faculty.user.email, password: TEST_PASSWORD })
+      ).body.token
+
+      const subject = await authed(request(app).post('/api/v1/subjects')).send({
+        programId: program.id,
+        semesterNumber: 1,
+        code: shortId('S'),
+        name: 'Test Subject',
+        credits: 4,
+        facultyId,
+      })
+
+      await createTestTimetableEntry(tenant.id, section.id, subject.body.id, facultyId, room.id)
+
+      await authed(request(app).post('/api/v1/attendance/sessions')).send({
+        sectionId: section.id,
+        subjectId: subject.body.id,
+        date: '2024-01-10',
+        facultyId,
+      })
+
+      await authed(request(app).post('/api/v1/assignments')).send({
+        subjectId: subject.body.id,
+        sectionId: section.id,
+        facultyId,
+        title: 'Assignment 1',
+        startDate: '2024-01-01',
+        dueDate: '2024-01-20',
+        maxMarks: 100,
+      })
+
+      const { user: studentUser } = await createTestStudentUser(tenant.id, departmentId, { sectionId: section.id })
+      const leaveType = await authed(request(app).post('/api/v1/leave/types')).send({
+        name: 'Casual Leave',
+        defaultDaysPerYear: 12,
+      })
+      const studentToken = (
+        await request(app).post('/api/v1/auth/login').send({ email: studentUser.email, password: TEST_PASSWORD })
+      ).body.token
+      const leaveRequest = await request(app)
+        .post('/api/v1/leave/requests')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ leaveTypeId: leaveType.body.id, startDate: '2024-02-01', endDate: '2024-02-02', reason: 'Fever' })
+
+      await request(app)
+        .post(`/api/v1/leave/requests/${leaveRequest.body.id}/approve`)
+        .set('Authorization', `Bearer ${facultyToken}`)
+    })
+
+    it('returns an aggregated 360 view with populated sections', async () => {
+      const res = await authed(request(app).get(`/api/v1/faculty/${facultyId}/360`))
+
+      expect(res.status).toBe(200)
+      expect(res.body.faculty.id).toBe(facultyId)
+      expect(res.body.faculty.departmentName).toBeTruthy()
+
+      expect(res.body.teaching.subjectCount).toBe(1)
+      expect(res.body.teaching.subjects).toHaveLength(1)
+
+      expect(res.body.timetable.weeklyPeriods).toBe(1)
+      expect(res.body.timetable.entries).toHaveLength(1)
+      expect(res.body.timetable.entries[0]).toMatchObject({
+        sectionName: expect.any(String),
+        subjectName: 'Test Subject',
+        roomName: expect.any(String),
+      })
+
+      expect(res.body.attendance.sessionsTaken).toBe(1)
+      expect(res.body.attendance.recentSessions).toHaveLength(1)
+
+      expect(res.body.assignments.count).toBe(1)
+      expect(res.body.assignments.recent).toHaveLength(1)
+
+      expect(res.body.leaveReviewed.count).toBe(1)
+    })
+
+    it('404s for an unknown faculty id', async () => {
+      const res = await authed(request(app).get('/api/v1/faculty/does-not-exist/360'))
+      expect(res.status).toBe(404)
+    })
+
+    it('returns zeroed sections for a faculty member with no relations', async () => {
+      const bare = await createTestFaculty(tenant.id, departmentId)
+      const res = await authed(request(app).get(`/api/v1/faculty/${bare.id}/360`))
+
+      expect(res.status).toBe(200)
+      expect(res.body.teaching).toEqual({ subjectCount: 0, subjects: [] })
+      expect(res.body.timetable).toEqual({ weeklyPeriods: 0, entries: [] })
+      expect(res.body.attendance).toEqual({ sessionsTaken: 0, recentSessions: [] })
+      expect(res.body.assignments).toEqual({ count: 0, recent: [] })
+      expect(res.body.leaveReviewed).toEqual({ count: 0 })
+    })
+
+    it('403s for a caller without FACULTY_READ', async () => {
+      const { user } = await createTestStudentUser(tenant.id, departmentId)
+      const loginRes = await request(app).post('/api/v1/auth/login').send({ email: user.email, password: TEST_PASSWORD })
+      const res = await request(app)
+        .get(`/api/v1/faculty/${facultyId}/360`)
+        .set('Authorization', `Bearer ${loginRes.body.token}`)
+      expect(res.status).toBe(403)
+    })
   })
 })

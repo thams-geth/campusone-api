@@ -8,6 +8,7 @@ export const studentsRouter = Router()
 studentsRouter.use(requireAuth, requireModule('CORE'))
 
 studentsRouter.get('/', requirePermission('STUDENT_READ'), studentController.list)
+studentsRouter.get('/:id/360', requirePermission('STUDENT_READ'), studentController.get360)
 studentsRouter.get('/:id', requirePermission('STUDENT_READ'), studentController.getById)
 studentsRouter.post('/', requirePermission('STUDENT_CREATE'), studentController.create)
 studentsRouter.put('/:id', requirePermission('STUDENT_UPDATE'), studentController.update)

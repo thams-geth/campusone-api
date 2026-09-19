@@ -12,6 +12,10 @@ export async function getById(req: Request, res: Response) {
   res.json(await studentService.getStudent(requireParam(req, 'id')))
 }
 
+export async function get360(req: Request, res: Response) {
+  res.json(await studentService.getStudent360(requireParam(req, 'id')))
+}
+
 export async function create(req: Request, res: Response) {
   const input = studentInputSchema.parse(req.body)
   res.status(201).json(await studentService.createStudent(req.auth!.tenantId, input))

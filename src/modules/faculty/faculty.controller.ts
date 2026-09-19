@@ -12,6 +12,10 @@ export async function getById(req: Request, res: Response) {
   res.json(await facultyService.getFaculty(requireParam(req, 'id')))
 }
 
+export async function get360(req: Request, res: Response) {
+  res.json(await facultyService.getFaculty360(requireParam(req, 'id')))
+}
+
 export async function create(req: Request, res: Response) {
   const input = facultyCreateSchema.parse(req.body)
   res.status(201).json(await facultyService.createFaculty(req.auth!.tenantId, input))

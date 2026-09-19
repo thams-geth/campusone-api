@@ -45,6 +45,95 @@ export async function getFaculty(id: string) {
   return toFacultyDto(row)
 }
 
+/**
+ * Faculty 360 — the same "everything about this person" aggregation
+ * as Student 360 (see student.service.ts's getStudent360), just across
+ * the tables a Faculty row participates in. Queries Prisma directly
+ * per section rather than reusing each module's own paginated list
+ * function.
+ */
+export async function getFaculty360(id: string) {
+  const row = await prisma.faculty.findUnique({
+    where: { id },
+    include: { ...withUser, department: true },
+  })
+  if (!row) throw ApiError.notFound('Faculty member not found')
+
+  const { department, ...rest } = row
+  const faculty = { ...toFacultyDto(rest), departmentName: department.name }
+
+  const [
+    subjects,
+    timetableEntries,
+    sessionsTaken,
+    recentSessions,
+    assignmentCount,
+    recentAssignments,
+    leaveReviewedCount,
+  ] = await Promise.all([
+    prisma.subject.findMany({
+      where: { facultyId: id },
+      select: { id: true, code: true, name: true, semesterNumber: true, credits: true },
+    }),
+    prisma.timetableEntry.findMany({
+      where: { facultyId: id },
+      include: { section: true, subject: true, room: true },
+    }),
+    prisma.attendanceSession.count({ where: { facultyId: id } }),
+    prisma.attendanceSession.findMany({
+      where: { facultyId: id },
+      orderBy: { date: 'desc' },
+      take: 10,
+      include: { section: true, subject: true },
+    }),
+    prisma.assignment.count({ where: { facultyId: id } }),
+    prisma.assignment.findMany({
+      where: { facultyId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: { id: true, title: true, status: true, dueDate: true },
+    }),
+    prisma.leaveRequest.count({ where: { reviewedByUserId: row.userId } }),
+  ])
+
+  return {
+    faculty,
+    teaching: {
+      subjectCount: subjects.length,
+      subjects,
+    },
+    timetable: {
+      weeklyPeriods: timetableEntries.length,
+      entries: timetableEntries.map((entry) => ({
+        id: entry.id,
+        dayOfWeek: entry.dayOfWeek,
+        startTime: entry.startTime,
+        endTime: entry.endTime,
+        sectionName: entry.section.name,
+        subjectName: entry.subject.name,
+        roomName: entry.room.name,
+      })),
+    },
+    attendance: {
+      sessionsTaken,
+      recentSessions: recentSessions.map((session) => ({
+        id: session.id,
+        date: session.date,
+        status: session.status,
+        sectionName: session.section.name,
+        subjectName: session.subject.name,
+      })),
+    },
+    assignments: {
+      count: assignmentCount,
+      recent: recentAssignments,
+    },
+    leaveReviewed: {
+      count: leaveReviewedCount,
+    },
+  }
+}
+
 async function assertDepartmentExists(departmentId: string) {
   const department = await prisma.department.findUnique({ where: { id: departmentId } })
   if (!department) throw ApiError.badRequest('Department not found.', { departmentId: ['Invalid department'] })
