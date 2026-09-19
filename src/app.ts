@@ -51,6 +51,7 @@ import { integrationsRouter } from './modules/integrations/integration.routes'
 import { approvalsRouter } from './modules/approvals/approval.routes'
 import { notificationsRouter } from './modules/notifications/notification.routes'
 import { classGroupsRouter } from './modules/class-groups/classGroup.routes'
+import { searchRouter } from './modules/search/search.routes'
 
 // Loaded once at module scope, not per-request — the spec is static
 // repo content, not something that changes at runtime.
@@ -149,6 +150,7 @@ export function createApp() {
   v1.use('/approvals', approvalsRouter)
   v1.use('/notifications', notificationsRouter)
   v1.use('/class-groups', classGroupsRouter)
+  v1.use('/search', searchRouter)
   // Roles/permissions admin surface — its own routes (/roles,
   // /permissions, /users/:id/role) rather than one resource prefix.
   v1.use(rbacRouter)
