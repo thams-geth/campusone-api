@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CampusOne Admin Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --surface: #ffffff;
+    --surface-2: #efebe1;
+    --border: #ded9c8;
+    --text: #23262f;
+    --text-muted: #6b6a63;
+    --accent: #1d2333;
+    --accent-ink: #1d2333;
+    --accent-2: #a8792c;
+    --tier-admin: #1d2333;
+    --tier-dept: #3e5c76;
+    --tier-staff: #a8792c;
+    --tier-self: #8b8779;
+    --shadow: 0 1px 2px rgba(29,35,51,0.06);
+    --radius-sm: 3px;
+    --radius-md: 6px;
+    --font-display: 'Spectral', Georgia, 'Times New Roman', serif;
+    --font-body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14151c;
+      --surface: #1b1d27;
+      --surface-2: #23252f;
+      --border: #2e303c;
+      --text: #e9e7de;
+      --text-muted: #a2a092;
+      --accent: #97a2d6;
+      --accent-ink: #97a2d6;
+      --accent-2: #d8ae55;
+      --tier-admin: #97a2d6;
+      --tier-dept: #86adc9;
+      --tier-staff: #d8ae55;
+      --tier-self: #8e8b7d;
+      --shadow: 0 1px 2px rgba(0,0,0,0.35);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #14151c;
+    --surface: #1b1d27;
+    --surface-2: #23252f;
+    --border: #2e303c;
+    --text: #e9e7de;
+    --text-muted: #a2a092;
+    --accent: #97a2d6;
+    --accent-ink: #97a2d6;
+    --accent-2: #d8ae55;
+    --tier-admin: #97a2d6;
+    --tier-dept: #86adc9;
+    --tier-staff: #d8ae55;
+    --tier-self: #8e8b7d;
+    --shadow: 0 1px 2px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 15.5px;
+    line-height: 1.6;
+  }
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    color: var(--text);
+    text-wrap: balance;
+    font-weight: 600;
+    margin: 0;
+  }
+  a { color: var(--accent-ink); }
+  code, .mono { font-family: var(--font-mono); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    max-width: 1240px;
+    margin: 0 auto;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .toc {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 32px 20px 32px 28px;
+    border-right: 1px solid var(--border);
+  }
+  .toc-brand {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.01em;
+    margin-bottom: 4px;
+  }
+  .toc-brand span { color: var(--accent-2); }
+  .toc-sub {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 28px;
+    display: block;
+  }
+  .toc nav { display: flex; flex-direction: column; gap: 2px; }
+  .toc a {
+    display: block;
+    text-decoration: none;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    padding: 5px 10px;
+    border-radius: var(--radius-sm);
+    border-left: 2px solid transparent;
+  }
+  .toc a:hover { color: var(--text); background: var(--surface-2); }
+  .toc a:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 1px; }
+  .toc a.top { color: var(--text); font-weight: 500; margin-top: 14px; }
+  .toc a.top:first-child { margin-top: 0; }
+  .toc a.sub { padding-left: 20px; font-size: 0.82rem; }
+
+  /* ---------- Main content ---------- */
+  main { padding: 48px 56px 120px; min-width: 0; }
+  .masthead { max-width: 640px; margin-bottom: 56px; }
+  .masthead .kicker {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent-2);
+    font-weight: 600;
+    margin-bottom: 10px;
+    display: block;
+  }
+  .masthead h1 { font-size: 2.4rem; line-height: 1.15; margin-bottom: 14px; }
+  .masthead p { color: var(--text-muted); font-size: 1.02rem; max-width: 58ch; }
+
+  section { margin-bottom: 72px; scroll-margin-top: 24px; }
+  section > h2 {
+    font-size: 1.55rem;
+    padding-bottom: 14px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  section > .section-lede { color: var(--text-muted); max-width: 64ch; margin-bottom: 28px; }
+  h3.group-title {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent-2);
+    font-weight: 600;
+    margin: 40px 0 4px;
+  }
+  h3.group-title:first-of-type { margin-top: 8px; }
+  .group-note { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px; max-width: 62ch; }
+
+  p { max-width: 68ch; }
+  .prose ol, .prose ul { max-width: 66ch; padding-left: 1.3em; }
+  .prose li { margin-bottom: 6px; }
+
+  /* ---------- Setup steps ---------- */
+  .steps {
+    counter-reset: step;
+    list-style: none;
+    padding: 0;
+    max-width: 640px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .steps li {
+    counter-increment: step;
+    position: relative;
+    padding: 16px 0 16px 46px;
+    border-bottom: 1px solid var(--border);
+  }
+  .steps li:last-child { border-bottom: none; }
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 16px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent-ink);
+    color: var(--surface);
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .steps strong { font-weight: 600; }
+  .steps .where {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--accent-2);
+    background: var(--surface-2);
+    padding: 1px 7px;
+    border-radius: var(--radius-sm);
+    margin-left: 6px;
+  }
+
+  /* ---------- Mermaid wrapper ---------- */
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 24px 16px;
+    margin: 8px 0 32px;
+    overflow-x: auto;
+  }
+  .diagram svg { max-width: 100%; }
+  .diagram .mermaid-source { display: none; }
+
+  /* ---------- Role table ---------- */
+  table.roles {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    font-size: 0.92rem;
+  }
+  table.roles th {
+    text-align: left;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    font-weight: 600;
+    background: var(--surface-2);
+    padding: 10px 16px;
+  }
+  table.roles td {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.roles tr:first-child td { border-top: none; }
+  .role-name { font-family: var(--font-mono); font-size: 0.86rem; font-weight: 500; }
+  .tier {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: var(--surface);
+    white-space: nowrap;
+  }
+  .tier.admin { background: var(--tier-admin); }
+  .tier.dept { background: var(--tier-dept); }
+  .tier.staff { background: var(--tier-staff); }
+  .tier.self { background: var(--tier-self); }
+  .portal-yes { color: var(--tier-dept); font-weight: 600; }
+  .portal-no { color: var(--text-muted); font-style: italic; }
+
+  /* ---------- Module cards ---------- */
+  .module-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(252px, 1fr));
+    gap: 14px;
+  }
+  .module-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .module-card h4 { font-size: 1.02rem; }
+  .module-card p { font-size: 0.87rem; color: var(--text-muted); margin: 0; }
+  .module-meta {
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .module-meta .who { font-weight: 500; color: var(--text); }
+
+  /* ---------- Workflows ---------- */
+  .workflow {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 22px 26px;
+    margin-bottom: 18px;
+  }
+  .workflow h4 { font-size: 1.05rem; margin-bottom: 4px; }
+  .workflow .actor { font-size: 0.8rem; color: var(--accent-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+  .workflow ol { margin: 12px 0 0; padding-left: 1.2em; max-width: 62ch; }
+  .workflow li { margin-bottom: 5px; }
+  .workflow .where { font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-muted); }
+
+  /* ---------- FAQ ---------- */
+  .faq-item { border-bottom: 1px solid var(--border); padding: 18px 0; max-width: 66ch; }
+  .faq-item:first-child { padding-top: 0; }
+  .faq-item:last-child { border-bottom: none; }
+  .faq-item h4 { font-size: 1rem; margin-bottom: 6px; }
+  .faq-item p { color: var(--text-muted); margin: 0; font-size: 0.93rem; }
+
+  footer {
+    max-width: 640px;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    border-top: 1px solid var(--border);
+    padding-top: 20px;
+    margin-top: 24px;
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 880px) {
+    .layout { grid-template-columns: 1fr; }
+    .toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); padding: 20px; }
+    .toc nav { flex-direction: row; flex-wrap: wrap; }
+    .toc a.top { margin-top: 0; }
+    .toc a.sub { display: none; }
+    main { padding: 32px 20px 80px; }
+    .masthead h1 { font-size: 1.9rem; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <aside class="toc">
+    <span class="toc-brand">Campus<span>One</span></span>
+    <span class="toc-sub">Admin Guide</span>
+    <nav>
+      <a class="top" href="#welcome">Welcome</a>
+      <a class="top" href="#getting-started">Getting Started</a>
+      <a class="top" href="#roles">Signing In &amp; Roles</a>
+      <a class="top" href="#modules">Module Reference</a>
+      <a class="sub" href="#mod-core">Core Setup &amp; Structure</a>
+      <a class="sub" href="#mod-academics">Academics — Day to Day</a>
+      <a class="sub" href="#mod-admissions-finance">Admissions &amp; Finance</a>
+      <a class="sub" href="#mod-campus">Campus Life</a>
+      <a class="sub" href="#mod-comms">Communication</a>
+      <a class="sub" href="#mod-platform">Platform &amp; Administration</a>
+      <a class="top" href="#workflows">Common Workflows</a>
+      <a class="top" href="#faq">FAQ &amp; Limitations</a>
+    </nav>
+  </aside>
+
+  <main>
+
+    <div class="masthead">
+      <span class="kicker">Administrator &amp; Staff Handbook</span>
+      <h1 id="welcome">Running your college on CampusOne</h1>
+      <p>CampusOne is a modular college-management system: a core of academic
+      structure and RBAC that every college gets, plus modules — Admissions,
+      Fees, Hostel, Library, Placements and more — enabled per your
+      institution's plan. This guide walks a new college through first-time
+      setup, explains who can do what, and gives a module-by-module reference
+      for day-to-day use.</p>
+    </div>
+
+    <section id="getting-started">
+      <h2>Getting started</h2>
+      <p class="section-lede">CampusOne's academic data has a strict shape: a
+      Section only exists inside a Batch, a Batch only inside a Program, and
+      so on. Set these up in order the first time — after that, most of your
+      time is spent in Students, Attendance, Fees and the other day-to-day
+      modules, not here.</p>
+
+      <div class="diagram">
+        <pre class="mermaid-source">
+flowchart LR
+    A["Institution\nname &amp; branding"] --> B["Academic Year\ne.g. 2025-26"]
+    B --> C["Departments"]
+    C --> D["Programs\ne.g. B.Tech CSE"]
+    D --> E["Batches\ne.g. 2023-2027 intake"]
+    E --> F["Sections\ne.g. CSE-A"]
+    F --> G["Subjects, Faculty, Rooms"]
+    G --> H["Timetable"]
+    H --> I["Students"]
+    I --> J["Day-to-day modules"]
+        </pre>
+        <div class="mermaid" id="setup-diagram"></div>
+      </div>
+
+      <ol class="steps prose">
+        <li><strong>Set your institution's name and branding.</strong> <span class="where">Institution</span> is a single record — your college's display name, URL slug, and an optional accent color used across the console.</li>
+        <li><strong>Create the current academic year</strong> and mark it current. <span class="where">Academic Years</span> Every Batch is anchored to one, e.g. <code>2025-26</code>, and only one year can be "current" at a time — creating a new one doesn't delete the old year's records.</li>
+        <li><strong>Add your departments.</strong> <span class="where">Departments</span> These are the top-level academic units (Computer Science, Mechanical, Commerce…) that Programs and Faculty attach to.</li>
+        <li><strong>Add programs under each department.</strong> <span class="where">Programs</span> A degree offering with a code and duration in years, e.g. <code>B.Tech CSE</code>, 4 years.</li>
+        <li><strong>Add batches.</strong> <span class="where">Batches</span> One intake year-group of a program, tied to the academic year it started in — e.g. the 2023 CSE intake, batch name <code>2023-2027</code>.</li>
+        <li><strong>Add sections within each batch.</strong> <span class="where">Sections</span> The actual class a student and a timetable belong to, e.g. <code>CSE-A</code>, with its own current semester and seat capacity.</li>
+        <li><strong>Add subjects, faculty and rooms.</strong> <span class="where">Subjects · Faculty · Rooms</span> Subjects are scoped to a program and semester; adding a Faculty record also creates that person's login.</li>
+        <li><strong>Build the timetable.</strong> <span class="where">Timetable</span> Pairs a section, subject, faculty member and room to a weekday and time — the system rejects a slot that double-books a faculty member or room.</li>
+        <li><strong>Bring in your students.</strong> <span class="where">Students</span> or <span class="where">Import / Export</span> Add students one at a time, or paste a CSV to preview and commit a bulk import.</li>
+        <li><strong>Turn on the modules your plan includes.</strong> Core setup, Academics and RBAC are always on. Admissions, Fees, Hostel/Transport, Library and Placements are enabled per tenant by CampusOne — contact your account contact if a module you expect isn't in the sidebar yet.</li>
+      </ol>
+    </section>
+
+    <section id="roles">
+      <h2>Signing in &amp; roles</h2>
+      <p class="section-lede">Sign in with the email and password your Super
+      Admin issued you. Every permission in CampusOne is checked as "does this
+      role hold this permission <em>inside your college</em>" — a role never
+      reaches across institutions. The table below is what each role can
+      broadly reach; the exact grants are visible to Super Admin/College Admin
+      under Roles &amp; Permissions.</p>
+
+      <table class="roles">
+        <thead>
+          <tr><th>Role</th><th>Tier</th><th>What they do</th><th>Console access</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="role-name">SUPER_ADMIN</td>
+            <td><span class="tier admin">Admin</span></td>
+            <td>Full control of the college's CampusOne account: every module, billing, API keys, roles.</td>
+            <td class="portal-yes">Full</td>
+          </tr>
+          <tr>
+            <td class="role-name">COLLEGE_ADMIN</td>
+            <td><span class="tier admin">Admin</span></td>
+            <td>Same reach as Super Admin — the day-to-day principal/registrar-level account.</td>
+            <td class="portal-yes">Full</td>
+          </tr>
+          <tr>
+            <td class="role-name">DEPARTMENT_ADMIN</td>
+            <td><span class="tier dept">Department</span></td>
+            <td>Manages one department's structure, academics and college-operations records. No billing, API keys, roles or audit log.</td>
+            <td class="portal-yes">Broad</td>
+          </tr>
+          <tr>
+            <td class="role-name">HOD</td>
+            <td><span class="tier dept">Department</span></td>
+            <td>Head of Department — same reach as Department Admin, scoped to running one department day-to-day.</td>
+            <td class="portal-yes">Broad</td>
+          </tr>
+          <tr>
+            <td class="role-name">EXAM_ADMIN</td>
+            <td><span class="tier dept">Department</span></td>
+            <td>Owns the exam lifecycle — verifying and publishing marks — plus read access to Reports.</td>
+            <td class="portal-yes">Exams &amp; Reports</td>
+          </tr>
+          <tr>
+            <td class="role-name">FACULTY</td>
+            <td><span class="tier staff">Staff</span></td>
+            <td>Marks attendance, approves student leave, manages their own assignments and marks entry, posts announcements and class-group messages.</td>
+            <td class="portal-yes">Teaching tools</td>
+          </tr>
+          <tr>
+            <td class="role-name">STAFF</td>
+            <td><span class="tier staff">Staff</span></td>
+            <td>Read access across academics, plus front-office work — documents, hostel/transport/library records, certificate issuance.</td>
+            <td class="portal-yes">Front office</td>
+          </tr>
+          <tr>
+            <td class="role-name">STUDENT</td>
+            <td><span class="tier self">Self-service</span></td>
+            <td>Requests leave, submits assignments, reads their own marks/attendance/announcements.</td>
+            <td class="portal-no">No console yet</td>
+          </tr>
+          <tr>
+            <td class="role-name">PARENT</td>
+            <td><span class="tier self">Self-service</span></td>
+            <td>Reserved for guardian-facing visibility into a student's record.</td>
+            <td class="portal-no">No console yet</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top:14px; font-size:0.85rem; color:var(--text-muted);">A tenth role, <span class="role-name">PLATFORM_ADMIN</span>, belongs to CampusOne's own operations team and spans every college — it never appears inside your account.</p>
+    </section>
+
+    <section id="modules">
+      <h2>Module reference</h2>
+      <p class="section-lede">Every module below lives in the left-hand
+      sidebar of the console once it's enabled for your college. Grouped the
+      way you'll actually reach for them, not the order they appear in the
+      nav.</p>
+
+      <h3 class="group-title" id="mod-core">Core setup &amp; structure</h3>
+      <p class="group-note">Always on. The academic hierarchy every other module reads from.</p>
+      <div class="module-grid">
+        <div class="module-card"><h4>Dashboard</h4><p>At-a-glance counts and charts: total/active students, department headcounts, enrollment trend, recent activity.</p><div class="module-meta"><span class="who">Everyone</span><span>landing page</span></div></div>
+        <div class="module-card"><h4>Institution</h4><p>Your college's name, URL slug and accent color. One record, editable only by Super/College Admin.</p><div class="module-meta"><span class="who">Super/College Admin</span><span>1 record</span></div></div>
+        <div class="module-card"><h4>Departments</h4><p>The top-level academic units students, faculty and programs all belong to.</p><div class="module-meta"><span class="who">Admin tier</span><span>list + form</span></div></div>
+        <div class="module-card"><h4>Academic Years</h4><p>Named years like 2025-26, one marked "current" at a time — everything with a school-year scope hangs off this.</p><div class="module-meta"><span class="who">Admin tier</span><span>list + form</span></div></div>
+        <div class="module-card"><h4>Programs</h4><p>A department's degree offerings — name, code and duration in years.</p><div class="module-meta"><span class="who">Admin tier</span><span>list + form</span></div></div>
+        <div class="module-card"><h4>Batches</h4><p>One intake year-group of a program, tied to the academic year it started in.</p><div class="module-meta"><span class="who">Admin tier</span><span>list + form</span></div></div>
+        <div class="module-card"><h4>Sections</h4><p>The actual class students and the timetable attach to — a batch split by capacity, e.g. CSE-A / CSE-B.</p><div class="module-meta"><span class="who">Admin tier</span><span>list + form</span></div></div>
+        <div class="module-card"><h4>Subjects</h4><p>Per program and semester, with credits, type (core/elective/lab…) and an optional coordinating faculty member.</p><div class="module-meta"><span class="who">Admin tier</span><span>list + form</span></div></div>
+        <div class="module-card"><h4>Faculty</h4><p>The teaching staff directory — creating a record also provisions that person's login.</p><div class="module-meta"><span class="who">Admin tier</span><span>list + dedicated form</span></div></div>
+        <div class="module-card"><h4>Rooms</h4><p>Physical classrooms and halls, with capacity, used when scheduling the timetable and exams.</p><div class="module-meta"><span class="who">Admin tier</span><span>list + form</span></div></div>
+        <div class="module-card"><h4>Timetable</h4><p>Weekly schedule tying section, subject, faculty and room to a day and time. Rejects double-bookings automatically.</p><div class="module-meta"><span class="who">Admin tier</span><span>filterable list</span></div></div>
+        <div class="module-card"><h4>Students</h4><p>The student roster: personal details, roll number, department/section, guardian contact and status.</p><div class="module-meta"><span class="who">Staff and up</span><span>list + profile</span></div></div>
+      </div>
+
+      <h3 class="group-title" id="mod-academics">Academics — day to day</h3>
+      <p class="group-note">What faculty and department staff live in every teaching day.</p>
+      <div class="module-grid">
+        <div class="module-card"><h4>Attendance</h4><p>Mark a session present/absent/late, then submit and lock it. A locked record can only change through a correction request.</p><div class="module-meta"><span class="who">Faculty</span><span>mark → lock → correct</span></div></div>
+        <div class="module-card"><h4>Leave</h4><p>Students request leave against a leave type; approving one automatically marks the matching attendance as on-leave.</p><div class="module-meta"><span class="who">Faculty approve</span><span>request → approve</span></div></div>
+        <div class="module-card"><h4>Assignments</h4><p>Draft, publish and close an assignment; review submissions and record marks against each one.</p><div class="module-meta"><span class="who">Faculty</span><span>draft → publish → grade</span></div></div>
+        <div class="module-card"><h4>Examinations</h4><p>Schedule an exam per subject, then move a schedule's marks through draft → submit → verify → publish. SGPA/CGPA compute automatically from published marks.</p><div class="module-meta"><span class="who">Faculty / Exam Admin</span><span>4-stage workflow</span></div></div>
+        <div class="module-card"><h4>Announcements</h4><p>Post a notice to the whole college or target it to one department, program, batch or section.</p><div class="module-meta"><span class="who">Faculty and up</span><span>targeted broadcast</span></div></div>
+        <div class="module-card"><h4>Class Groups</h4><p>A lightweight message board per section — pick a section, read and post to its group.</p><div class="module-meta"><span class="who">Faculty and up</span><span>per-section feed</span></div></div>
+      </div>
+
+      <h3 class="group-title" id="mod-admissions-finance">Admissions &amp; finance</h3>
+      <p class="group-note">The two modules that touch money and new enrollment — kept small on purpose.</p>
+      <div class="module-grid">
+        <div class="module-card"><h4>Admissions</h4><p>An applicant moves through applied → document verification → shortlisted → approved → offered → accepted, then <em>Enroll</em> turns them into a real Student record.</p><div class="module-meta"><span class="who">Admissions staff</span><span>7-stage pipeline</span></div></div>
+        <div class="module-card"><h4>Fees</h4><p>Set fee structures per program, raise invoices, then record payments, discounts/fines or a waiver against each one — an internal ledger, not a payment gateway yet.</p><div class="module-meta"><span class="who">Finance staff</span><span>structure → invoice → payment</span></div></div>
+      </div>
+
+      <h3 class="group-title" id="mod-campus">Campus life</h3>
+      <p class="group-note">Everything a student touches outside the classroom.</p>
+      <div class="module-grid">
+        <div class="module-card"><h4>Hostel</h4><p>Hostels and their rooms, plus allocating and vacating a student's bed.</p><div class="module-meta"><span class="who">Staff and up</span><span>allocate → vacate</span></div></div>
+        <div class="module-card"><h4>Transport</h4><p>Vehicles, routes and stops, plus allocating a student to a route.</p><div class="module-meta"><span class="who">Staff and up</span><span>routes + allocation</span></div></div>
+        <div class="module-card"><h4>Library</h4><p>The book catalogue and issue/return desk — a return past the due date records a late fine automatically.</p><div class="module-meta"><span class="who">Staff and up</span><span>catalogue + issues</span></div></div>
+        <div class="module-card"><h4>Certificates</h4><p>Request → issue → verify formal certificates (bonafide, transfer…), each issued with its own verification code.</p><div class="module-meta"><span class="who">Staff and up</span><span>request → issue</span></div></div>
+        <div class="module-card"><h4>Activities</h4><p>Log a student's achievements, events, clubs, sports and internships.</p><div class="module-meta"><span class="who">Faculty and up</span><span>record log</span></div></div>
+        <div class="module-card"><h4>Placements</h4><p>Companies and job openings, and each student application's status from applied through offer.</p><div class="module-meta"><span class="who">Placement staff</span><span>openings → applications</span></div></div>
+      </div>
+
+      <h3 class="group-title" id="mod-comms">Communication</h3>
+      <p class="group-note">The one place notifications land, separate from Announcements' public broadcasts.</p>
+      <div class="module-grid">
+        <div class="module-card"><h4>Notifications</h4><p>Your personal in-app inbox, plus toggles for whether email/SMS/push copies of a notification are also sent.</p><div class="module-meta"><span class="who">Everyone</span><span>inbox + preferences</span></div></div>
+      </div>
+
+      <h3 class="group-title" id="mod-platform">Platform &amp; administration</h3>
+      <p class="group-note">Running the account itself, not the campus — mostly Super/College Admin territory.</p>
+      <div class="module-grid">
+        <div class="module-card"><h4>Documents</h4><p>General document records — mark sheets, ID proofs, transfer certificates — distinct from the Certificates issuance workflow.</p><div class="module-meta"><span class="who">Staff and up</span><span>upload record + verify</span></div></div>
+        <div class="module-card"><h4>Import / Export</h4><p>Paste a student CSV, preview which rows validate, then commit — or export your roster to CSV filtered by department/status.</p><div class="module-meta"><span class="who">Admin tier</span><span>bulk students only</span></div></div>
+        <div class="module-card"><h4>Reports</h4><p>Eight read-only views: student strength, attendance, department/subject performance, exam results, faculty workload, financial summary, dropout.</p><div class="module-meta"><span class="who">Admin / Exam Admin</span><span>analytics, no editing</span></div></div>
+        <div class="module-card"><h4>Roles &amp; Permissions</h4><p>See every system role and exactly which permissions it carries; assign a role to a faculty member.</p><div class="module-meta"><span class="who">Super/College Admin</span><span>view + assign</span></div></div>
+        <div class="module-card"><h4>Audit Log</h4><p>Every meaningful change in your account — who did what, when, with a before/after diff.</p><div class="module-meta"><span class="who">Super/College Admin</span><span>read-only history</span></div></div>
+        <div class="module-card"><h4>Billing</h4><p>CampusOne's own subscription on your college — current plan, usage against its limits, and invoices from CampusOne to you. Not your students' fees.</p><div class="module-meta"><span class="who">Super/College Admin</span><span>your CampusOne plan</span></div></div>
+        <div class="module-card"><h4>Developer Settings</h4><p>API keys, webhook endpoints and third-party integration toggles, for your IT team to connect other systems.</p><div class="module-meta"><span class="who">Super/College Admin</span><span>technical / IT use</span></div></div>
+        <div class="module-card"><h4>Approvals</h4><p>A general-purpose inbox for one-off approve/reject requests raised elsewhere in the system.</p><div class="module-meta"><span class="who">Department Admin/HOD</span><span>generic inbox</span></div></div>
+      </div>
+    </section>
+
+    <section id="workflows">
+      <h2>Common workflows</h2>
+      <p class="section-lede">A handful of tasks end to end, the way they actually get done.</p>
+
+      <div class="workflow">
+        <span class="actor">Admissions staff</span>
+        <h4>Turn an applicant into an enrolled student</h4>
+        <ol>
+          <li>Open <span class="where">Admissions</span>, find the applicant, and advance their status one stage at a time as each check clears.</li>
+          <li>Once they're <strong>Accepted</strong>, open the application and use <strong>Enroll</strong> — assign a roll number and (optionally) a section.</li>
+          <li>The system creates their real record in <span class="where">Students</span> automatically, linked back to this application.</li>
+        </ol>
+      </div>
+
+      <div class="workflow">
+        <span class="actor">Faculty</span>
+        <h4>Run today's attendance for a class</h4>
+        <ol>
+          <li>In <span class="where">Attendance</span>, start a new session for your section and subject (today's date is the default).</li>
+          <li>Mark each student present, absent, late or excused, then <strong>Submit</strong> the session.</li>
+          <li>A department admin or HOD <strong>locks</strong> it once it's final. After that, fixing a mistake goes through a correction request instead of re-editing.</li>
+        </ol>
+      </div>
+
+      <div class="workflow">
+        <span class="actor">Exam Admin</span>
+        <h4>Publish results for an exam</h4>
+        <ol>
+          <li>Create the exam and add a schedule per subject in <span class="where">Examinations</span>.</li>
+          <li>Faculty enter marks against the schedule while it's in <strong>Draft</strong>, then submit.</li>
+          <li>Verify the submitted marks, then <strong>Publish</strong> — SGPA and CGPA recompute for every affected student the moment marks go live.</li>
+        </ol>
+      </div>
+
+      <div class="workflow">
+        <span class="actor">Finance staff</span>
+        <h4>Record a student's fee payment</h4>
+        <ol>
+          <li>Raise an invoice against the student in <span class="where">Fees</span>, using a fee structure if one matches their program.</li>
+          <li>Record each payment as it comes in — the invoice's status (pending/partial/paid/overdue) recalculates automatically.</li>
+          <li>Use an adjustment for a discount or fine, or a waiver to close out the balance without a payment.</li>
+        </ol>
+      </div>
+
+      <div class="workflow">
+        <span class="actor">Department Admin</span>
+        <h4>Notify one department about a schedule change</h4>
+        <ol>
+          <li>Open <span class="where">Announcements</span>, choose <strong>Department</strong> as the audience and pick the department.</li>
+          <li>Set a priority and, if it's time-sensitive, an expiry date so it stops showing after the fact.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="faq">
+      <h2>FAQ &amp; current limitations</h2>
+
+      <div class="faq-item">
+        <h4>Can we turn a module on ourselves?</h4>
+        <p>Not yet — module enablement is set on your account by CampusOne. If a module in this guide isn't showing in your sidebar, contact your account contact to have it turned on for your plan.</p>
+      </div>
+      <div class="faq-item">
+        <h4>Do payments actually move through Fees or Billing?</h4>
+        <p>Both are internal ledgers today, not a live payment gateway. Recording a payment updates the invoice's status correctly, but no money actually moves through CampusOne yet — UPI support is planned.</p>
+      </div>
+      <div class="faq-item">
+        <h4>Can students or parents log in?</h4>
+        <p>The roles exist and their permissions are defined, but there's no student/parent-facing console yet — this guide covers the staff-facing admin console only.</p>
+      </div>
+      <div class="faq-item">
+        <h4>Where do uploaded documents and certificates actually live?</h4>
+        <p>A Document or Certificate record today stores a reference (a URL/description), not an uploaded file — there's no file storage behind it yet.</p>
+      </div>
+      <div class="faq-item">
+        <h4>Is two-factor login or session management available?</h4>
+        <p>The platform supports it, but there's no in-console settings screen for it yet. Contact your account contact if you need it enabled for a user.</p>
+      </div>
+      <div class="faq-item">
+        <h4>Something looks wrong, or a module I need isn't listed here.</h4>
+        <p>Reach out to your CampusOne account contact — this guide reflects what's live today and gets updated as new modules ship.</p>
+      </div>
+    </section>
+
+    <footer>
+      CampusOne Admin Guide — reflects the console as currently deployed. Screens and permissions may evolve; check with your account contact if something here looks out of date.
+    </footer>
+
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  (function () {
+    var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: prefersDark ? 'dark' : 'neutral',
+      flowchart: { htmlLabels: true, curve: 'basis' },
+      themeVariables: {
+        fontFamily: "'IBM Plex Sans', sans-serif"
+      }
+    });
+    var source = document.querySelector('.mermaid-source').textContent.trim();
+    mermaid.render('setup-flow-svg', source).then(function (result) {
+      document.getElementById('setup-diagram').innerHTML = result.svg;
+    });
+  })();
+</script>
+</body>
+</html>
