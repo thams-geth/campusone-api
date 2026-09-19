@@ -25,6 +25,12 @@ authRouter.post('/refresh', authRateLimit, authController.refresh)
 authRouter.post('/logout', authController.logout)
 authRouter.get('/me', requireAuth, authController.me)
 
+authRouter.post('/change-password', requireAuth, authController.changePassword)
+// Rate-limited like login/refresh: both are unauthenticated endpoints an
+// attacker could otherwise abuse to enumerate emails or spam reset tokens.
+authRouter.post('/forgot-password', authRateLimit, authController.forgotPassword)
+authRouter.post('/reset-password', authRateLimit, authController.resetPassword)
+
 authRouter.post('/mfa/setup', requireAuth, authController.setupMfa)
 authRouter.post('/mfa/enable', requireAuth, authController.enableMfa)
 authRouter.post('/mfa/disable', requireAuth, authController.disableMfa)

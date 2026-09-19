@@ -2,7 +2,7 @@ import type { Request, Response } from 'express'
 import { env } from '../../config/env'
 import { ApiError } from '../../utils/ApiError'
 import { requireParam } from '../../utils/params'
-import { loginSchema, mfaCodeSchema } from './auth.schema'
+import { changePasswordSchema, forgotPasswordSchema, loginSchema, mfaCodeSchema, resetPasswordSchema } from './auth.schema'
 import * as authService from './auth.service'
 
 const REFRESH_COOKIE_NAME = 'refreshToken'
@@ -94,4 +94,24 @@ export async function revokeSession(req: Request, res: Response) {
 export async function listLoginHistory(req: Request, res: Response) {
   const history = await authService.listLoginHistory(req.auth!.userId)
   res.json(history)
+}
+
+export async function changePassword(req: Request, res: Response) {
+  const { currentPassword, newPassword } = changePasswordSchema.parse(req.body)
+  await authService.changePassword(req.auth!.userId, currentPassword, newPassword)
+  res.status(204).end()
+}
+
+export async function forgotPassword(req: Request, res: Response) {
+  const { email } = forgotPasswordSchema.parse(req.body)
+  const result = await authService.requestPasswordReset(email)
+  // Always the same generic message regardless of whether the email
+  // matched anything — never reveal account existence.
+  res.json({ message: 'If that email has an account, a reset link has been sent.', ...result })
+}
+
+export async function resetPassword(req: Request, res: Response) {
+  const { token, newPassword } = resetPasswordSchema.parse(req.body)
+  await authService.resetPassword(token, newPassword)
+  res.status(204).end()
 }

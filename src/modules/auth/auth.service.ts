@@ -5,9 +5,11 @@ import ms from 'ms'
 import type { User } from '@prisma/client'
 import { env } from '../../config/env'
 import { ApiError } from '../../utils/ApiError'
-import { findRefreshTokenByHash, findUserByEmailForLogin, prisma } from '../../prisma/client'
+import { findPasswordResetTokenByHash, findRefreshTokenByHash, findUserByEmailForLogin, prisma } from '../../prisma/client'
 import { requestContext } from '../../prisma/tenantContext'
 import { buildOtpauthUri, generateTotpSecret, verifyTotp } from '../../utils/totp'
+import { logActivity } from '../shared/activityLog'
+import { dispatchNotification } from '../notifications/notification.service'
 import type { AccessTokenPayload } from './token.types'
 
 const SALT_ROUNDS = 12
@@ -19,6 +21,8 @@ const MAX_FAILED_ATTEMPTS = 5
 const LOCKOUT_MS = 30_000
 const REFRESH_TOKEN_BYTES = 48
 const RECOVERY_CODE_COUNT = 10
+const RESET_TOKEN_BYTES = 32
+const RESET_TOKEN_TTL_MS = 30 * 60 * 1000
 
 export interface AuthUserDto {
   id: string
@@ -73,6 +77,10 @@ function hashRefreshToken(raw: string): string {
 }
 
 function hashRecoveryCode(raw: string): string {
+  return crypto.createHash('sha256').update(raw).digest('hex')
+}
+
+function hashResetToken(raw: string): string {
   return crypto.createHash('sha256').update(raw).digest('hex')
 }
 
@@ -228,6 +236,92 @@ export async function getCurrentUser(userId: string): Promise<AuthUserDto> {
 
 export async function hashPassword(plainPassword: string): Promise<string> {
   return bcrypt.hash(plainPassword, SALT_ROUNDS)
+}
+
+// ---- Password change / reset ----
+
+/** The caller changing their own password — always runs inside an already-authenticated request context. */
+export async function changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
+  const valid = await bcrypt.compare(currentPassword, user.passwordHash)
+  if (!valid) {
+    throw new ApiError('Current password is incorrect.', 401, 'INVALID_CURRENT_PASSWORD')
+  }
+
+  const passwordHash = await hashPassword(newPassword)
+  await prisma.user.update({ where: { id: userId }, data: { passwordHash } })
+  // Changing a password logs the account out everywhere, the caller's
+  // own current session included — a real "did this really happen"
+  // moment should force a fresh login, not just the browser tab that
+  // triggered it.
+  await prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } })
+  await logActivity('changed their password', { entity: 'User', entityId: userId, action: 'PASSWORD_CHANGE' })
+}
+
+/**
+ * Starts a password reset. Never reveals whether the email exists —
+ * always resolves the same way regardless. No live email delivery
+ * exists anywhere in this codebase yet (see notification.service.ts's
+ * own doc comment) — outside production, the raw token is handed back
+ * directly in the response so the flow is actually completable end to
+ * end; in production this must not leak, same reasoning as
+ * errorHandler.ts never leaking a stack trace outside dev. A real
+ * deployment needs a live EMAIL/SMS integration wired up before this
+ * endpoint is genuinely usable by a locked-out user.
+ */
+export async function requestPasswordReset(email: string): Promise<{ resetToken?: string }> {
+  const record = await findUserByEmailForLogin(email)
+  if (!record || !record.isActive) {
+    return {}
+  }
+
+  return requestContext.run({ tenantId: record.tenantId, userId: record.id, role: 'UNRESOLVED' }, async () => {
+    const rawToken = crypto.randomBytes(RESET_TOKEN_BYTES).toString('hex')
+    await prisma.passwordResetToken.create({
+      data: {
+        tenantId: record.tenantId,
+        userId: record.id,
+        tokenHash: hashResetToken(rawToken),
+        expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
+      },
+    })
+
+    await dispatchNotification({
+      tenantId: record.tenantId,
+      userIds: [record.id],
+      type: 'PASSWORD_RESET_REQUESTED',
+      title: 'Password reset requested',
+      body: "A password reset was requested for your account. If this wasn't you, no action is needed.",
+    })
+
+    return env.isProduction ? {} : { resetToken: rawToken }
+  })
+}
+
+export async function resetPassword(rawToken: string, newPassword: string): Promise<void> {
+  const invalid = () => new ApiError('Invalid or expired reset token.', 400, 'INVALID_RESET_TOKEN')
+
+  const record = await findPasswordResetTokenByHash(hashResetToken(rawToken))
+  if (!record || record.usedAt || record.expiresAt.getTime() < Date.now() || !record.user.isActive) {
+    throw invalid()
+  }
+
+  await requestContext.run({ tenantId: record.tenantId, userId: record.userId, role: 'UNRESOLVED' }, async () => {
+    const passwordHash = await hashPassword(newPassword)
+    await prisma.user.update({
+      where: { id: record.userId },
+      data: { passwordHash, failedLoginAttempts: 0, lockedUntil: null },
+    })
+    await prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } })
+    // Same "log out everywhere" reasoning as changePassword — a reset
+    // token being used at all means the previous password shouldn't be
+    // trusted anywhere it's still logged in.
+    await prisma.refreshToken.updateMany({
+      where: { userId: record.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    })
+    await logActivity('reset their password', { entity: 'User', entityId: record.userId, action: 'PASSWORD_RESET' })
+  })
 }
 
 // ---- MFA ----

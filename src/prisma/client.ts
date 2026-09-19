@@ -1,5 +1,5 @@
 import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient, type ApiKey, type RefreshToken, type User } from '@prisma/client'
+import { PrismaClient, type ApiKey, type PasswordResetToken, type RefreshToken, type User } from '@prisma/client'
 import { env } from '../config/env'
 import { getRequestContext } from './tenantContext'
 
@@ -100,4 +100,21 @@ export async function findApiKeyByHash(keyHash: string): Promise<(ApiKey & { cre
     basePrisma.apiKey.findUnique({ where: { keyHash }, include: { createdBy: true } }),
   ])
   return key
+}
+
+/**
+ * A fourth bootstrap exception: reset-password receives only an opaque
+ * token (emailed to the user), not a tenant id, so the lookup by hash
+ * must run before the tenant is known too — same fail-closed guarantee
+ * as the three above.
+ */
+export async function findPasswordResetTokenByHash(
+  tokenHash: string,
+): Promise<(PasswordResetToken & { user: User }) | null> {
+  const [, , token] = await basePrisma.$transaction([
+    basePrisma.$executeRaw`SELECT set_config('app.tenant_bootstrap', 'true', TRUE)`,
+    basePrisma.$executeRaw`SELECT set_config('app.current_tenant', '', TRUE)`,
+    basePrisma.passwordResetToken.findUnique({ where: { tokenHash }, include: { user: true } }),
+  ])
+  return token
 }

@@ -201,4 +201,71 @@ describe('auth routes', () => {
     expect(historyRes.body.some((h: { success: boolean }) => h.success === true)).toBe(true)
     expect(historyRes.body.some((h: { success: boolean }) => h.success === false)).toBe(true)
   })
+
+  it('changes the caller\'s own password and rejects a wrong current password', async () => {
+    const user = await createTestUser(tenant.id, 'STAFF', 'change-pw-test')
+    const loginRes = await request(app).post('/api/v1/auth/login').send({ email: user.email, password: TEST_PASSWORD })
+    const token = loginRes.body.token as string
+
+    const wrongRes = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ currentPassword: 'not-it', newPassword: 'BrandNewPassw0rd!' })
+    expect(wrongRes.status).toBe(401)
+    expect(wrongRes.body.code).toBe('INVALID_CURRENT_PASSWORD')
+
+    const changeRes = await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ currentPassword: TEST_PASSWORD, newPassword: 'BrandNewPassw0rd!' })
+    expect(changeRes.status).toBe(204)
+
+    const oldPasswordLoginRes = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: user.email, password: TEST_PASSWORD })
+    expect(oldPasswordLoginRes.status).toBe(401)
+
+    const newPasswordLoginRes = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: user.email, password: 'BrandNewPassw0rd!' })
+    expect(newPasswordLoginRes.status).toBe(200)
+  })
+
+  it('runs the forgot-password / reset-password flow end to end, without revealing whether an email exists', async () => {
+    const user = await createTestUser(tenant.id, 'STAFF', 'reset-pw-test')
+
+    const unknownRes = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ email: 'nobody-at-all@example.com' })
+    expect(unknownRes.status).toBe(200)
+    expect(unknownRes.body.resetToken).toBeUndefined()
+
+    const forgotRes = await request(app).post('/api/v1/auth/forgot-password').send({ email: user.email })
+    expect(forgotRes.status).toBe(200)
+    expect(forgotRes.body.message).toBe(unknownRes.body.message)
+    const resetToken = forgotRes.body.resetToken as string
+    expect(resetToken).toEqual(expect.any(String))
+
+    const badTokenRes = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: 'not-a-real-token', newPassword: 'ResetPassw0rd!' })
+    expect(badTokenRes.status).toBe(400)
+    expect(badTokenRes.body.code).toBe('INVALID_RESET_TOKEN')
+
+    const resetRes = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: resetToken, newPassword: 'ResetPassw0rd!' })
+    expect(resetRes.status).toBe(204)
+
+    // Single-use: the same token can't be replayed.
+    const replayRes = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: resetToken, newPassword: 'AnotherPassw0rd!' })
+    expect(replayRes.status).toBe(400)
+
+    const loginRes = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: user.email, password: 'ResetPassw0rd!' })
+    expect(loginRes.status).toBe(200)
+  })
 })
