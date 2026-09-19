@@ -214,9 +214,11 @@ model Tenant {
   faculty                 Faculty[]
   rooms                   Room[]
   timetableEntries        TimetableEntry[]
+  periodSlots             PeriodSlot[]
   students                Student[]
   auditLogs               AuditLog[]
   refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
   attendanceSessions      AttendanceSession[]
   attendanceRecords       AttendanceRecord[]
   attendanceCorrections   AttendanceCorrection[]
@@ -365,11 +367,12 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  roles          UserRole[]
-  refreshTokens  RefreshToken[]
-  auditLogs      AuditLog[]
-  facultyProfile Faculty?
-  studentProfile Student?
+  roles               UserRole[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  auditLogs           AuditLog[]
+  facultyProfile      Faculty?
+  studentProfile      Student?
 
   attendanceCorrectionsRequested AttendanceCorrection[]   @relation("AttendanceCorrectionRequestedBy")
   attendanceCorrectionsReviewed  AttendanceCorrection[]   @relation("AttendanceCorrectionReviewedBy")
@@ -408,6 +411,27 @@ model RefreshToken {
   tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([userId])
+}
+
+// Stored hashed like RefreshToken — a raw token is only ever shown once,
+// in the forgot-password response (dev/test only, see auth.service.ts),
+// never persisted in the clear. RLS carries the same tenant_bootstrap
+// exception as RefreshToken/ApiKey: reset-password receives only the
+// opaque token, not a tenant id, so the lookup by hash must run before
+// the tenant is known.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
   createdAt DateTime  @default(now())
 
   @@index([tenantId])
@@ -632,6 +656,35 @@ model TimetableEntry {
   @@index([sectionId, dayOfWeek])
   @@index([facultyId, dayOfWeek])
   @@index([roomId, dayOfWeek])
+}
+
+enum PeriodType {
+  TEACHING
+  BREAK
+  LUNCH
+}
+
+// The institution's shared daily bell schedule (Period 1, Break, Period 2,
+// ..., Lunch, ...) — one flat list per tenant, ordered by startTime rather
+// than a separate position field, since a day's periods are inherently
+// chronological. TimetableEntry doesn't reference this by id: the visual
+// grid (campusone-admin's TimetableGrid) matches an entry to the period
+// row(s) it covers purely by comparing start/end time overlap, the same
+// way timetable.service.ts's own conflict detection already works — so a
+// lab spanning three periods is just an entry whose time range covers
+// three period rows, with no schema link required.
+model PeriodSlot {
+  id        String     @id @default(cuid())
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  label     String
+  type      PeriodType
+  startTime String // "HH:mm"
+  endTime   String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([tenantId])
 }
 
 model Student {
